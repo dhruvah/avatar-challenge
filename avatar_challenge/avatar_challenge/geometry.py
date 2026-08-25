@@ -143,6 +143,59 @@ def _tessellate_arc(prev_xy, arc: ArcSpec, segments: int) -> List[Sequence[float
     return points
 
 
+def _de_boor(t: float, degree: int, knots: np.ndarray, control: np.ndarray) -> np.ndarray:
+    """Evaluate a B-spline at parameter t via De Boor's algorithm."""
+    n = len(control) - 1
+    # Locate the knot span containing t.
+    if t >= knots[n + 1]:
+        span = n
+    else:
+        span = degree
+        while span < n and knots[span + 1] <= t:
+            span += 1
+
+    d = [control[span - degree + j].astype(float).copy() for j in range(degree + 1)]
+    for r in range(1, degree + 1):
+        for j in range(degree, r - 1, -1):
+            i = span - degree + j
+            denom = knots[i + degree - r + 1] - knots[i]
+            alpha = 0.0 if denom < 1e-12 else (t - knots[i]) / denom
+            d[j] = (1.0 - alpha) * d[j - 1] + alpha * d[j]
+    return d[degree]
+
+
+def _tessellate_bspline(prev_xy, spec: dict, segments: int) -> List[Sequence[float]]:
+    """Sample a clamped B-spline into a polyline of `segments` straight segments.
+
+    The previous vertex is prepended as the first control point, so the curve
+    starts exactly where the last segment ended. A clamped (repeated end) knot
+    vector makes the curve interpolate its first and last control points, which
+    is what lets B-spline segments chain with plain points and arcs.
+    """
+    control = np.array([list(prev_xy)] + [list(p) for p in spec["control_points"]], dtype=float)
+    degree = int(spec.get("degree", 3))
+    if len(control) <= degree:
+        raise ValueError(
+            f"B-spline of degree {degree} needs at least {degree + 1} control points "
+            f"(including the implicit start point), got {len(control)}"
+        )
+
+    n = len(control) - 1
+    # Clamped uniform knot vector: degree+1 zeros, interior, degree+1 ones.
+    interior = n - degree
+    knots = np.concatenate([
+        np.zeros(degree + 1),
+        np.arange(1, interior + 1) / (interior + 1) if interior > 0 else np.empty(0),
+        np.ones(degree + 1),
+    ])
+
+    points = []
+    for i in range(1, segments + 1):
+        pt = _de_boor(i / segments, degree, knots, control)
+        points.append((float(pt[0]), float(pt[1])))
+    return points
+
+
 def flatten_vertices(vertices: Sequence[Union[Sequence[float], ArcSpec]], arc_segments: int) -> List[Sequence[float]]:
     """Expand a vertex list (points and/or arc specs) into a plain polyline of 2D points."""
     if not vertices:
@@ -152,7 +205,9 @@ def flatten_vertices(vertices: Sequence[Union[Sequence[float], ArcSpec]], arc_se
         raise ValueError("The first vertex must be a plain [x, y] point, not an arc")
     flat: List[Sequence[float]] = [tuple(float(v) for v in first)]
     for v in vertices[1:]:
-        if isinstance(v, dict):
+        if isinstance(v, dict) and "control_points" in v:
+            flat.extend(_tessellate_bspline(flat[-1], v, arc_segments))
+        elif isinstance(v, dict):
             flat.extend(_tessellate_arc(flat[-1], v, arc_segments))
         else:
             flat.append(tuple(float(c) for c in v))

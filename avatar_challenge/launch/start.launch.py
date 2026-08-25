@@ -52,7 +52,16 @@ def generate_launch_description():
                 "lift_height": 0.03,
                 "arc_segments": 16,
                 "closed": True,
-                "service_timeout_sec": 60.0,
+                "service_timeout_sec": 120.0,
+                # blend=True plans each shape as a single continuous Cartesian
+                # trajectory; set False to fall back to stop-at-every-vertex
+                # per-edge moves (exact corners, jerkier motion).
+                "blend": True,
+                "blend_max_step": 0.005,
+                "blend_min_fraction": 0.99,
+                "blend": True,
+                "blend_max_step": 0.005,
+                "blend_min_fraction": 0.99,
             }
         ],
     )

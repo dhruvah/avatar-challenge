@@ -14,6 +14,7 @@ from moveit_msgs.srv import GetPositionIK
 from visualization_msgs.msg import Marker, MarkerArray
 from xarm_msgs.srv import PlanPose, PlanSingleStraight, PlanExec
 
+from avatar_challenge.blended_path import BlendedPathExecutor
 from avatar_challenge.geometry import build_shape_waypoints, Waypoint
 from avatar_challenge.shapes_io import load_shapes, ShapeDef
 
@@ -36,11 +37,15 @@ class ShapeTracerNode(Node):
         self.declare_parameter("arc_segments", 16)
         self.declare_parameter("closed", True)
         self.declare_parameter("service_timeout_sec", 20.0)
+        self.declare_parameter("blend", True)
+        self.declare_parameter("blend_max_step", 0.005)
+        self.declare_parameter("blend_min_fraction", 0.99)
 
         self.lift_height = self.get_parameter("lift_height").value
         self.arc_segments = self.get_parameter("arc_segments").value
         self.default_closed = self.get_parameter("closed").value
         self.service_timeout = self.get_parameter("service_timeout_sec").value
+        self.blend = self.get_parameter("blend").value
 
         shapes_file = self.get_parameter("shapes_file").value
         if not shapes_file:
@@ -67,6 +72,21 @@ class ShapeTracerNode(Node):
             self.get_logger().info(f"Waiting for service '{name}'...")
             if not cli.wait_for_service(timeout_sec=self.service_timeout):
                 self.get_logger().fatal(f"Service '{name}' did not become available")
+                raise SystemExit(1)
+
+        self.blender = None
+        if self.blend:
+            self.blender = BlendedPathExecutor(
+                self,
+                max_step=self.get_parameter("blend_max_step").value,
+                min_fraction=self.get_parameter("blend_min_fraction").value,
+                timeout=self.service_timeout,
+            )
+            if not self.blender.wait_for_servers():
+                self.get_logger().fatal(
+                    "blend=true but /compute_cartesian_path or /execute_trajectory "
+                    "never became available"
+                )
                 raise SystemExit(1)
 
         self.shapes = load_shapes(shapes_file, default_closed=self.default_closed)
@@ -154,6 +174,13 @@ class ShapeTracerNode(Node):
         # coming from anywhere (e.g. the previous shape's hover point).
         first = waypoints[0]
         self._plan_and_exec_free(first.position, first.quaternion, f"{shape.name}:approach")
+
+        if self.blender is not None:
+            # Everything after the approach -- descend, trace, lift -- goes out
+            # as a single Cartesian path so the arm never stops at a vertex.
+            poses = [_to_pose_msg(wp.position, wp.quaternion) for wp in waypoints[1:]]
+            self.blender.plan_and_execute(poses, f"{shape.name}:blended")
+            return
 
         for i, wp in enumerate(waypoints[1:], start=1):
             desc = f"{shape.name}:wp{i}" + (" (hover)" if wp.is_travel else "")
