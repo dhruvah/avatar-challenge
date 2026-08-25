@@ -11,6 +11,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from geometry_msgs.msg import Pose, Point, PoseStamped
 from moveit_msgs.srv import GetPositionIK
+from sensor_msgs.msg import JointState
 from visualization_msgs.msg import Marker, MarkerArray
 from xarm_msgs.srv import PlanPose, PlanSingleStraight, PlanExec
 
@@ -74,6 +75,14 @@ class ShapeTracerNode(Node):
                 self.get_logger().fatal(f"Service '{name}' did not become available")
                 raise SystemExit(1)
 
+        # /compute_ik seeds from the state we hand it. Under `ros2 launch` this
+        # node comes up alongside move_group, before the controllers publish any
+        # joint state -- an empty seed makes IK fail and every waypoint look
+        # unreachable. Block until a real joint state has arrived.
+        self._joint_state = None
+        self.create_subscription(JointState, "/joint_states", self._on_joint_state, 10)
+        self._await_joint_state()
+
         self.blender = None
         if self.blend:
             self.blender = BlendedPathExecutor(
@@ -115,6 +124,26 @@ class ShapeTracerNode(Node):
         self._call(self.straight_plan_cli, req, f"straight_plan({description})")
         self._call(self.exec_cli, PlanExec.Request(wait=True), f"exec_plan({description})")
 
+    # -- robot state ------------------------------------------------------------
+
+    def _on_joint_state(self, msg: JointState):
+        if msg.name and msg.position:
+            self._joint_state = msg
+
+    def _await_joint_state(self):
+        self.get_logger().info("Waiting for /joint_states...")
+        deadline = time.time() + self.service_timeout
+        while self._joint_state is None and time.time() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.1)
+        if self._joint_state is None:
+            self.get_logger().fatal(
+                "No /joint_states received; cannot seed IK or verify reachability"
+            )
+            raise SystemExit(1)
+        self.get_logger().info(
+            f"Got /joint_states ({len(self._joint_state.name)} joints)"
+        )
+
     # -- preflight reachability -------------------------------------------------
 
     def _is_reachable(self, waypoint: Waypoint) -> bool:
@@ -123,6 +152,7 @@ class ShapeTracerNode(Node):
         req.ik_request.ik_link_name = "link_eef"
         req.ik_request.avoid_collisions = True
         req.ik_request.timeout.sec = 1
+        req.ik_request.robot_state.joint_state = self._joint_state
         stamped = PoseStamped()
         stamped.header.frame_id = "world"
         stamped.pose = _to_pose_msg(waypoint.position, waypoint.quaternion)
