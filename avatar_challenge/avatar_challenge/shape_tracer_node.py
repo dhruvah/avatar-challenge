@@ -19,8 +19,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 from xarm_msgs.srv import PlanPose, PlanSingleStraight, PlanExec, PlanJoint
 
 from avatar_challenge.blended_path import BlendedPathExecutor
-from avatar_challenge.geometry import (build_shape_waypoints, Waypoint, Frame,
-                                        rpy_to_quaternion)
+from avatar_challenge.geometry import build_shape_waypoints, Waypoint
 from avatar_challenge.kinematics import Chain
 from avatar_challenge.shapes_io import load_shapes, ShapeDef
 
@@ -60,11 +59,10 @@ class ShapeTracerNode(Node):
         self.declare_parameter("blend_max_step", 0.005)
         self.declare_parameter("blend_min_fraction", 0.99)
         # A known, natural ready configuration: base straight ahead, elbow bent,
-        # zero wrist roll. Returning here before each shape makes the free-space
-        # approach short and repeatable -- see home_between_shapes below.
+        # zero wrist roll. Starting from it makes the approach repeatable and
+        # gives the Cartesian solver a sane IK seed.
         self.declare_parameter("home_joints", [0.0, -0.5706, 0.0, 0.5039, 0.0, 1.0745, 0.0])
         self.declare_parameter("home_on_start", True)
-        self.declare_parameter("home_between_shapes", False)
 
         self.lift_height = self.get_parameter("lift_height").value
         self.arc_segments = self.get_parameter("arc_segments").value
@@ -73,10 +71,7 @@ class ShapeTracerNode(Node):
         self.blend = self.get_parameter("blend").value
         self.home_joints = list(self.get_parameter("home_joints").value)
         self.home_on_start = self.get_parameter("home_on_start").value
-        self.home_between_shapes = self.get_parameter("home_between_shapes").value
 
-        # Optional: the designer server drives this node over HTTP and calls
-        # reload() per request instead of reading a file at startup.
         shapes_file = self.get_parameter("shapes_file").value
 
         self.pose_plan_cli = self.create_client(PlanPose, "xarm_pose_plan")
@@ -91,18 +86,8 @@ class ShapeTracerNode(Node):
         # RViz's MotionPlanning display animates whatever appears here.
         self.display_pub = self.create_publisher(
             DisplayTrajectory, "/display_planned_path", 1)
-        # Where the tool actually went, computed from joint states with our own
-        # FK, so target and actual can be compared in one RViz view.
-        self.actual_pub = self.create_publisher(
-            MarkerArray, "shape_tracer/actual_path", latched)
 
         self._chain = None
-        self._recording = False
-        self._actual = []
-        # Live progress for the designer UI: which shape, how far through, and
-        # the tool path so far expressed in that shape's own 2D frame.
-        self._progress = None
-        self._frame = None
         self.create_subscription(String, "/robot_description", self._on_urdf, latched)
 
         for name, cli in [
@@ -140,15 +125,11 @@ class ShapeTracerNode(Node):
                 )
                 raise SystemExit(1)
 
-        self.shapes = []
-        if shapes_file:
-            self.reload(shapes_file)
-
-    def reload(self, shapes_file: str):
-        """Load (or replace) the shape list from a JSON file."""
+        if not shapes_file:
+            self.get_logger().fatal("Required parameter 'shapes_file' was not set")
+            raise SystemExit(1)
         self.shapes = load_shapes(shapes_file, default_closed=self.default_closed)
         self.get_logger().info(f"Loaded {len(self.shapes)} shape(s) from {shapes_file}")
-        return self.shapes
 
     # -- service call helpers -------------------------------------------------
 
@@ -217,8 +198,8 @@ class ShapeTracerNode(Node):
         try:
             self._chain = Chain.from_urdf(msg.data)
             self.get_logger().info(
-                f"Kinematic chain loaded ({len(self._chain.actuated)} actuated joints); "
-                f"actual-path overlay and singularity checks enabled"
+                f"Kinematic chain loaded ({len(self._chain.actuated)} actuated "
+                f"joints); singularity reporting enabled"
             )
         except Exception as exc:  # noqa: BLE001 - overlay is optional, never fatal
             self.get_logger().warn(f"could not parse /robot_description: {exc}")
@@ -226,13 +207,6 @@ class ShapeTracerNode(Node):
     def _on_joint_state(self, msg: JointState):
         if msg.name and msg.position:
             self._joint_state = msg
-            if self._recording and self._chain is not None:
-                idx = {n: i for i, n in enumerate(msg.name)}
-                try:
-                    q = [msg.position[idx[j.name]] for j in self._chain.actuated]
-                except KeyError:
-                    return
-                self._actual.append(self._chain.fk(q)[:3, 3].copy())
 
     def _await_joint_state(self):
         self.get_logger().info("Waiting for /joint_states...")
@@ -312,8 +286,6 @@ class ShapeTracerNode(Node):
             lift_height=self.lift_height,
             arc_segments=self.arc_segments,
         )
-        if self.home_between_shapes:
-            self.go_home()
         self.check_reachable(shape, waypoints)
         self.get_logger().info(f"[{shape.name}] tracing {len(waypoints)} waypoints")
 
@@ -332,24 +304,7 @@ class ShapeTracerNode(Node):
             self.blender.retime(trajectory, shape.speed)
             self.report_trajectory(shape, trajectory, fraction, len(poses))
             self.publish_planned(trajectory)
-            pts = trajectory.joint_trajectory.points
-            dur = pts[-1].time_from_start
-            self._actual = []
-            self._frame = Frame(position=np.array(shape.position, dtype=float),
-                                quaternion=rpy_to_quaternion(*shape.rpy))
-            self._progress = {
-                "shape": shape.name,
-                "duration": dur.sec + dur.nanosec * 1e-9,
-                "start": time.time(),
-            }
-            self._recording = True
-            try:
-                self.blender.execute(trajectory, desc)
-            finally:
-                self._recording = False
-                self.publish_actual()
-                if self._progress:
-                    self._progress["done"] = True
+            self.blender.execute(trajectory, desc)
             return
 
         for i, wp in enumerate(waypoints[1:], start=1):
@@ -409,79 +364,6 @@ class ShapeTracerNode(Node):
         msg.trajectory.append(trajectory)
         self.display_pub.publish(msg)
 
-    def current_joints(self):
-        """Current actuated joint positions, in chain order, for the UI's arm view."""
-        js, chain = self._joint_state, self._chain
-        if js is None or chain is None:
-            return None
-        idx = {n: i for i, n in enumerate(js.name)}
-        try:
-            return [round(float(js.position[idx[j.name]]), 5) for j in chain.actuated]
-        except KeyError:
-            return None
-
-    def progress_snapshot(self):
-        """What the designer needs to animate the trace, in the shape's own frame.
-
-        Projecting into the shape's 2D plane here (rather than shipping world
-        points and doing it in the browser) keeps one implementation of the
-        transform, so the live overlay cannot drift from the drawing it is
-        drawn over.
-        """
-        joints = self.current_joints()
-        prog = self._progress
-        if not prog:
-            return {"tracing": False, "joints": joints}
-        pts = list(self._actual)          # atomic snapshot; ROS thread appends
-        # A long trace accumulates thousands of samples and the UI polls several
-        # times a second. Uniformly decimate to a cap that is still far denser
-        # than the canvas can show, keeping the newest point so the leading dot
-        # stays exactly where the tool is.
-        if len(pts) > PROGRESS_PATH_CAP:
-            stride = len(pts) / PROGRESS_PATH_CAP
-            idx = sorted({int(i * stride) for i in range(PROGRESS_PATH_CAP)} | {len(pts) - 1})
-            pts = [pts[i] for i in idx]
-        local = []
-        if self._frame is not None:
-            R = self._frame.rotation
-            origin = self._frame.position
-            for p in pts:
-                d = R.T @ (np.asarray(p) - origin)
-                local.append([round(float(d[0]) * 1000, 2), round(float(d[1]) * 1000, 2)])
-        elapsed = time.time() - prog["start"]
-        frac = 1.0 if prog.get("done") else min(1.0, elapsed / max(prog["duration"], 1e-6))
-        return {
-            "tracing": not prog.get("done", False),
-            "joints": joints,
-            "shape": prog["shape"],
-            "fraction": round(frac, 4),
-            "elapsed": round(elapsed, 2),
-            "duration": round(prog["duration"], 2),
-            "path": local,
-        }
-
-    def publish_actual(self):
-        """Draw where the tool really went, for comparison with the target."""
-        if not self._actual:
-            return
-        marker = Marker()
-        marker.header.frame_id = "link_base"
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = "shape_tracer_actual"
-        marker.id = 0
-        marker.type = Marker.LINE_STRIP
-        marker.action = Marker.ADD
-        marker.scale.x = 0.002
-        marker.color.r, marker.color.g, marker.color.b, marker.color.a = (0.95, 0.45, 0.15, 1.0)
-        marker.pose.orientation.w = 1.0
-        for p in self._actual:
-            pt = Point()
-            pt.x, pt.y, pt.z = (float(v) for v in p)
-            marker.points.append(pt)
-        arr = MarkerArray()
-        arr.markers.append(marker)
-        self.actual_pub.publish(arr)
-
     # -- RViz visualization (bonus) ----------------------------------------------
 
     def publish_markers(self):
@@ -528,14 +410,6 @@ def main(argv=None):
     node = None
     try:
         node = ShapeTracerNode()
-        if not node.shapes:
-            node.get_logger().fatal(
-                "No shapes loaded -- set the 'shapes_file' parameter"
-            )
-            raise SystemExit(1)
-        # The marker publisher is TRANSIENT_LOCAL, so a late RViz still gets the
-        # outlines; this pause just keeps the first frame from racing node startup.
-        time.sleep(1.0)
         node.trace_all()
     except SystemExit:
         raise

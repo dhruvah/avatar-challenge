@@ -44,11 +44,10 @@ RViz opens and the arm traces every shape in `config/shapes.json`.
 | Topic | Shows |
 |---|---|
 | `shape_tracer/target_shapes` | Intended outlines (green), latched |
-| `shape_tracer/actual_path` | Where the tool actually went (orange) |
 | `/display_planned_path` | The planned trajectory, animated by the MotionPlanning display |
 
-The actual path is computed from `/joint_states` with the FK in `kinematics.py`,
-so target and actual can be compared directly in one view.
+`tools/verify_path.py` records the tool path from TF and measures it against the
+target, which is the rigorous version of the same comparison.
 
 ---
 
@@ -83,8 +82,7 @@ Shapes live in `config/shapes.json`, selected by the `shapes_file` parameter.
 
 Metres and radians throughout, because that is what `geometry_msgs/Pose` and the
 xArm MoveIt config natively use — so there is no unit conversion anywhere in the
-pipeline and nowhere for one to be forgotten. The designer works in millimetres
-and degrees and converts on export.
+pipeline and nowhere for one to be forgotten.
 
 ### Segment types
 
@@ -173,42 +171,22 @@ state is worse than stopping. Recovery is re-running, which begins by homing.
 
 ---
 
-## The shape designer
+## Interactive shape designer (`demo-designer` branch)
 
-`avatar_challenge/web/shape_designer.html` — a self-contained page for drawing
-shapes, with the workspace shaded by measured quality.
+A browser-based designer — draw shapes on a millimetre grid, see the workspace
+shaded by measured manipulability, send them straight to the arm over HTTP, and
+watch the trace animate live — lives on the **`demo-designer`** branch, together
+with its ROS HTTP service, a `docker exec` port forwarder, and a fake-DOM UI test
+harness (99 checks).
+
+It is kept off `master` deliberately. This submission is about the robotics, and
+1,400 lines of browser code would sit in front of that rather than beside it. The
+measurement underneath it — the workspace sweep in `tools/workspace_quality.py` —
+is on `master`, because that part is robotics rather than UI.
 
 ```bash
-ros2 run avatar_challenge designer_server_node.py   # serves it on :8080
+git checkout demo-designer
 ```
-
-Draw, press **Send to robot**, watch the arm trace it. A scale bar and live
-bounding-box dimensions keep the size of a path readable.
-
-Note the canvas is the **plane's own frame**, so turning the plane does not move
-the drawing on screen — a compass shows where the world axes and the robot base
-lie from the drawing's point of view, and turns as the plane turns. The page polls
-`/api/progress` and animates the tool path live over your drawing.
-
-If the container does not publish port 8080, `tools/docker_tunnel.py` forwards it
-through `docker exec` — published ports cannot be added to a running container, and
-this avoids recreating one just to reach the UI.
-
-Opened without a server (a copy on disk), the Send button disables itself and the
-page is export-only.
-
-**Shading is measured, not modelled.** 969 poses were swept with `/compute_ik`,
-then scored by Yoshikawa manipulability from a URDF-derived Jacobian. Buckets come
-from the distribution over the 650 reachable poses: near-singular below the 5th
-percentile (0.010), marginal below the 25th (0.027). Near-singular ground is
-*reachable* — the arm just lurches there, because small tool motions need large
-joint speeds.
-
-The overlay is a **design-time guide**. It assumes the tool points along the plane
-normal and that reach is a surface of revolution, and it knows nothing about
-self-collision. The node's IK preflight remains the authority.
-
----
 
 ## Verification
 
@@ -219,12 +197,10 @@ self-collision. The node's IK preflight remains the authority.
 | Vertex accuracy, `blend: true` | **2.20 mm** (corners rounded by blending) |
 | Run-to-run repeatability | **identical** joint travel across 3 runs |
 | Trajectory suite | **240/240** planned, 0 unreachable, 0 failures |
-| Browser FK vs robot FK | agree to **3.3 µm** |
 | `kinematics.py` FK vs MoveIt `/compute_fk` | **0.000000 mm** |
 
 ```bash
-colcon test --packages-select avatar_challenge   # 107 tests
-python3 tools/ui/run_ui_audit.py                 # 99 UI checks
+colcon test --packages-select avatar_challenge   # 106 tests
 ```
 
 ### What the trajectory sweep showed
@@ -257,7 +233,8 @@ the PDF's geometry (100 mm square, 45° about Z) at a reachable `x = 0.300`.
   knot vector makes the curve interpolate its endpoints, which is what lets spline
   segments chain with points and arcs.
 - **Blending** — one continuous Cartesian trajectory per shape.
-- **Per-shape speed**, **singularity analysis**, and the **shape designer** above.
+- **Per-shape speed** and **singularity reporting** — every trace logs its
+  minimum manipulability and warns when it passes close to a singularity.
 
 ---
 
@@ -269,10 +246,8 @@ the PDF's geometry (100 mm square, 45° about Z) at a reachable `x = 0.300`.
 - Tool orientation is constant per shape; a plane whose normal varies along the
   path is out of scope.
 - No collision checking *between* shapes beyond MoveIt's own planning scene.
-- The designer holds one "smooth" flag per shape, so importing a shape built from
-  several separate B-spline runs merges them into one — it warns when it does.
-- The workspace map was swept at three tilts (0°, 45°, 90°) and interpolates to the
-  nearest; it is a guide, not a guarantee.
+- The workspace sweep covered three tilts (0°, 45°, 90°); it characterises the
+  workspace, it does not certify any individual pose. The IK preflight does that.
 
 ---
 
@@ -286,22 +261,15 @@ avatar_challenge/
     blended_path.py      Cartesian planning, re-timing, execution
     kinematics.py        FK, Jacobian, manipulability from the URDF
     shape_tracer_node.py the node: preflight, motion strategy, RViz output
-    designer_server.py   serves the designer, traces what it sends
-  web/shape_designer.html
-  test/                  107 tests, no robot required
-tools/                   measurement and diagnostic scripts (see below)
+  test/                  106 tests, no robot required
+tools/                   measurement scripts behind the numbers above
 ```
 
 | Tool | Purpose |
 |---|---|
 | `verify_path.py` | Records `link_eef` from TF and measures deviation from target |
-| `path_fidelity.py` | Executed vs requested path, in the units you drew in |
 | `workspace_quality.py` | The 969-pose manipulability sweep behind the overlay |
 | `trajectory_suite.py` | Plans a large batch of shapes and scores execution quality |
-| `lift_check.py` | Confirms the pen lifts between disconnected shapes |
-| `workspace_probe.py` | Coarse reachability grid |
-| `docker_tunnel.py` | Forwards a port into a running container |
-| `ui/run_ui_audit.py` | Drives the designer's real handlers against a fake DOM |
 
 Generated sweep outputs are not committed; re-run the tools to regenerate them.
 

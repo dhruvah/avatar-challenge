@@ -122,15 +122,3 @@ class BlendedPathExecutor:
                 f"{description}: trajectory execution failed "
                 f"(MoveItErrorCode {outcome.result.error_code.val})"
             )
-
-    def plan_and_execute(self, poses, description: str, speed: float = 1.0):
-        trajectory, fraction = self.plan(poses, description)
-        self.retime(trajectory, speed)
-        points = len(trajectory.joint_trajectory.points)
-        duration = trajectory.joint_trajectory.points[-1].time_from_start
-        self._node.get_logger().info(
-            f"{description}: blended {len(poses)} waypoints into one trajectory "
-            f"({points} points, {duration.sec + duration.nanosec * 1e-9:.2f}s "
-            f"at {speed * 100:.0f}% speed, {fraction * 100:.1f}% of path)"
-        )
-        self.execute(trajectory, description)
