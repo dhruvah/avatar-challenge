@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from typing import List, Sequence, Union
 
 
+MAX_NAME_LENGTH = 120
+
+
 @dataclass
 class ShapeDef:
     name: str
@@ -121,6 +124,15 @@ def load_shapes(path: str, default_closed: bool = True) -> List[ShapeDef]:
         if not isinstance(s, dict):
             raise ValueError(f"shapes[{i}]: expected an object, got {s!r}")
         name = s.get("name", f"shape_{i}")
+        # A non-string name survives loading and only fails much later, when the
+        # caller formats it -- after the arm has already moved.
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(
+                f"shapes[{i}]: name must be a non-empty string, got {name!r}")
+        if len(name) > MAX_NAME_LENGTH:
+            raise ValueError(
+                f"shapes[{i}]: name is {len(name)} characters, "
+                f"maximum is {MAX_NAME_LENGTH}")
         where = f"Shape '{name}'"
 
         vertices = s.get("vertices")

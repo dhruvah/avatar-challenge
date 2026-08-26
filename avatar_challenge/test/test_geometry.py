@@ -130,6 +130,41 @@ def test_arc_direction_is_respected():
     assert np.sign(ccw[3][1]) == -np.sign(cw[3][1])
 
 
+@pytest.mark.parametrize("start,end,cw,expect_deg", [
+    ((1.0, 0.0), (0.0, 1.0), False, 90.0),      # simple quarter
+    ((1.0, 0.0), (0.0, 1.0), True, 270.0),      # the long way round
+    ((0.0, 1.0), (1.0, 0.0), False, 270.0),
+    ((-1.0, 0.0), (0.0, -1.0), False, 90.0),    # crosses +/-pi
+    ((0.0, -1.0), (-1.0, 0.0), True, 90.0),     # crosses +/-pi clockwise
+])
+def test_arc_sweep_direction_across_the_pi_wraparound(start, end, cw, expect_deg):
+    """atan2 wraps at +/-pi; the sweep must still take the requested direction."""
+    pts = _tessellate_arc(start, {"arc_center": [0.0, 0.0],
+                                  "arc_end": list(end), "clockwise": cw}, 72)
+    total = 0.0
+    prev = np.array(start)
+    for p in pts:
+        p = np.array(p)
+        cross = prev[0] * p[1] - prev[1] * p[0]
+        dot = prev @ p
+        total += math.atan2(cross, dot)
+        prev = p
+    assert abs(math.degrees(abs(total)) - expect_deg) < 1e-6
+    assert (total < 0) == cw
+    assert np.allclose(pts[-1], end, atol=1e-12)
+
+
+@pytest.mark.parametrize("degree,n_ctrl", [(1, 1), (1, 4), (2, 2), (2, 5),
+                                           (3, 3), (3, 8), (5, 5), (5, 9)])
+def test_bspline_accepts_any_valid_degree_and_control_count(degree, n_ctrl):
+    ctrl = [[0.1 * (i + 1), 0.05 * ((i % 3) - 1)] for i in range(n_ctrl)]
+    pts = _tessellate_bspline((0.0, 0.0), {"control_points": ctrl,
+                                           "degree": degree}, 24)
+    assert len(pts) == 24
+    assert np.allclose(pts[-1], ctrl[-1], atol=1e-9)
+    assert all(np.isfinite(p).all() for p in pts)
+
+
 def test_arc_rejects_inconsistent_radius():
     with pytest.raises(ValueError, match="equidistant"):
         _tessellate_arc((0.0, 0.0), {"arc_center": [1, 0], "arc_end": [5, 0]}, 8)
@@ -238,6 +273,24 @@ def test_collinear_points_are_valid_geometry(tmp_path):
 def test_malformed_shapes_are_rejected(tmp_path, shape, match):
     with pytest.raises(ValueError, match=match):
         load_shapes(_write(tmp_path, shape))
+
+
+@pytest.mark.parametrize("bad_name", [5, 3.5, {"a": 1}, [], None, "", "   ", True])
+def test_invalid_names_are_rejected(tmp_path, bad_name):
+    """A non-string name loads fine and only fails when it is formatted, which
+    on the designer path happens after the arm has already moved."""
+    with pytest.raises(ValueError, match="name"):
+        load_shapes(_write(tmp_path, dict(GOOD, name=bad_name)))
+
+
+@pytest.mark.parametrize("ok_name", ["square", "carré_45°", "\u5f62", "a" * 120])
+def test_valid_names_including_unicode_are_accepted(tmp_path, ok_name):
+    assert load_shapes(_write(tmp_path, dict(GOOD, name=ok_name)))[0].name == ok_name
+
+
+def test_absurdly_long_names_are_rejected(tmp_path):
+    with pytest.raises(ValueError, match="maximum"):
+        load_shapes(_write(tmp_path, dict(GOOD, name="a" * 500)))
 
 
 def test_non_finite_numbers_are_rejected(tmp_path):

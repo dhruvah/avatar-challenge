@@ -218,13 +218,12 @@ class FakePlanResult:
         self.error_code = types.SimpleNamespace(val=err)
 
 
-def _planner(result, min_fraction=0.99):
+def _planner(result):
     node = FakeNode()
     ex = BlendedPathExecutor.__new__(BlendedPathExecutor)
     ex._node = node
     ex._timeout = 0.01
     ex._max_step = 0.005
-    ex._min_fraction = min_fraction
     sent = []
     ex._plan_cli = types.SimpleNamespace(call_async=lambda req: FakeFuture(result))
     ex._exec_cli = types.SimpleNamespace(
@@ -232,13 +231,28 @@ def _planner(result, min_fraction=0.99):
     return ex, sent
 
 
-@pytest.mark.parametrize("fraction", [0.0, 0.5, 0.9, 0.98, 0.995])
+@pytest.mark.parametrize("fraction", [0.0, 0.5, 0.9, 0.98, 0.99, 0.995, 0.999999])
 def test_partial_cartesian_path_is_rejected(fraction):
-    """A path that is 99.5% complete still misses part of the shape."""
-    ex, sent = _planner(FakePlanResult(fraction), min_fraction=0.999)
-    with pytest.raises(RuntimeError, match="only"):
+    """99.5% of a square is three and a bit sides -- not a drawn square."""
+    ex, sent = _planner(FakePlanResult(fraction))
+    with pytest.raises(RuntimeError, match="partial outline"):
         ex.plan(poses=[object()], description="s:blended")
     assert sent == [], "a truncated plan must never reach the controller"
+
+
+@pytest.mark.parametrize("code", [-1, -12, -31, 99999])
+def test_moveit_error_code_is_rejected_even_at_full_fraction(code):
+    """fraction can read 1.0 while the service reports a failure."""
+    ex, sent = _planner(FakePlanResult(1.0, err=code))
+    with pytest.raises(RuntimeError, match="MoveItErrorCode"):
+        ex.plan(poses=[object()], description="s:blended")
+    assert sent == []
+
+
+def test_floating_point_noise_around_one_is_still_accepted():
+    ex, _ = _planner(FakePlanResult(1.0 - 1e-12))
+    _, fraction = ex.plan(poses=[object()], description="s:blended")
+    assert fraction == pytest.approx(1.0)
 
 
 def test_missing_plan_response_is_rejected():

@@ -13,6 +13,14 @@ from rclpy.action import ActionClient
 from moveit_msgs.action import ExecuteTrajectory
 from moveit_msgs.srv import GetCartesianPath
 
+# A Cartesian plan must cover the whole outline. Anything short of complete
+# silently omits part of the shape, so the only slack allowed is floating-point
+# noise around 1.0 -- not a tunable quality setting. MoveIt returns exactly 1.0
+# on a complete path, so the bound is kept far below any fraction that could
+# represent a genuinely missing sub-millimetre segment.
+COMPLETE_PATH_TOLERANCE = 1e-9
+MOVEIT_SUCCESS = 1
+
 PLANNING_GROUP = "xarm7"
 EEF_LINK = "link_eef"
 PLANNING_FRAME = "world"
@@ -21,10 +29,9 @@ PLANNING_FRAME = "world"
 class BlendedPathExecutor:
     """Plans and executes a list of waypoints as one continuous trajectory."""
 
-    def __init__(self, node, max_step: float, min_fraction: float, timeout: float):
+    def __init__(self, node, max_step: float, timeout: float):
         self._node = node
         self._max_step = max_step
-        self._min_fraction = min_fraction
         self._timeout = timeout
         self._plan_cli = node.create_client(GetCartesianPath, "/compute_cartesian_path")
         self._exec_cli = ActionClient(node, ExecuteTrajectory, "/execute_trajectory")
@@ -53,10 +60,19 @@ class BlendedPathExecutor:
         result = future.result()
         if result is None:
             raise RuntimeError(f"{description}: /compute_cartesian_path timed out")
-        if result.fraction < self._min_fraction:
+
+        code = getattr(result, "error_code", None)
+        if code is not None and code.val != MOVEIT_SUCCESS:
             raise RuntimeError(
-                f"{description}: Cartesian path only {result.fraction * 100:.1f}% "
-                f"complete (need >= {self._min_fraction * 100:.0f}%)"
+                f"{description}: /compute_cartesian_path failed "
+                f"(MoveItErrorCode {code.val})"
+            )
+        if result.fraction < 1.0 - COMPLETE_PATH_TOLERANCE:
+            # 99.5% of a square is three and a bit sides. Refuse rather than draw
+            # part of the shape and report success.
+            raise RuntimeError(
+                f"{description}: Cartesian path only {result.fraction * 100:.2f}% "
+                f"complete; refusing to execute a partial outline"
             )
         return result.solution, result.fraction
 

@@ -57,7 +57,6 @@ class ShapeTracerNode(Node):
         self.declare_parameter("service_timeout_sec", 120.0)
         self.declare_parameter("blend", True)
         self.declare_parameter("blend_max_step", 0.005)
-        self.declare_parameter("blend_min_fraction", 0.99)
         # A known, natural ready configuration: base straight ahead, elbow bent,
         # zero wrist roll. Starting from it makes the approach repeatable and
         # gives the Cartesian solver a sane IK seed.
@@ -86,8 +85,14 @@ class ShapeTracerNode(Node):
         # RViz's MotionPlanning display animates whatever appears here.
         self.display_pub = self.create_publisher(
             DisplayTrajectory, "/display_planned_path", 1)
+        # Where the tool actually went, from joint states through our own FK, so
+        # target and actual can be compared in one view.
+        self.actual_pub = self.create_publisher(
+            MarkerArray, "shape_tracer/actual_path", latched)
 
         self._chain = None
+        self._recording = False
+        self._actual = []
         self.create_subscription(String, "/robot_description", self._on_urdf, latched)
 
         for name, cli in [
@@ -115,7 +120,6 @@ class ShapeTracerNode(Node):
             self.blender = BlendedPathExecutor(
                 self,
                 max_step=self.get_parameter("blend_max_step").value,
-                min_fraction=self.get_parameter("blend_min_fraction").value,
                 timeout=self.service_timeout,
             )
             if not self.blender.wait_for_servers():
@@ -130,6 +134,14 @@ class ShapeTracerNode(Node):
             raise SystemExit(1)
         self.shapes = load_shapes(shapes_file, default_closed=self.default_closed)
         self.get_logger().info(f"Loaded {len(self.shapes)} shape(s) from {shapes_file}")
+
+        # Re-timing happens on the Cartesian trajectory, which only the blended
+        # backend produces; xarm_planner's services expose no speed control.
+        if not self.blend:
+            slowed = [s.name for s in self.shapes if s.speed < 1.0]
+            if slowed:
+                self.get_logger().warn(
+                    f"blend=false, so 'speed' is ignored for: {', '.join(slowed)}")
 
     # -- service call helpers -------------------------------------------------
 
@@ -207,6 +219,13 @@ class ShapeTracerNode(Node):
     def _on_joint_state(self, msg: JointState):
         if msg.name and msg.position:
             self._joint_state = msg
+            if self._recording and self._chain is not None:
+                idx = {n: i for i, n in enumerate(msg.name)}
+                try:
+                    q = [msg.position[idx[j.name]] for j in self._chain.actuated]
+                except KeyError:
+                    return
+                self._actual.append(self._chain.fk(q)[:3, 3].copy())
 
     def _await_joint_state(self):
         self.get_logger().info("Waiting for /joint_states...")
@@ -304,7 +323,13 @@ class ShapeTracerNode(Node):
             self.blender.retime(trajectory, shape.speed)
             self.report_trajectory(shape, trajectory, fraction, len(poses))
             self.publish_planned(trajectory)
-            self.blender.execute(trajectory, desc)
+            self._actual = []
+            self._recording = True
+            try:
+                self.blender.execute(trajectory, desc)
+            finally:
+                self._recording = False
+                self.publish_actual(shape)
             return
 
         for i, wp in enumerate(waypoints[1:], start=1):
@@ -322,6 +347,7 @@ class ShapeTracerNode(Node):
         re-run, which begins by homing to a known configuration.
         """
         self.publish_markers()
+        self.clear_actual()
         if self.home_on_start:
             self.get_logger().info("Moving to the ready pose before tracing")
             self.go_home()
@@ -365,6 +391,42 @@ class ShapeTracerNode(Node):
         self.display_pub.publish(msg)
 
     # -- RViz visualization (bonus) ----------------------------------------------
+
+    def publish_actual(self, shape):
+        """Draw the executed path for one shape, keyed by its index.
+
+        Each shape gets its own marker id so a multi-shape run accumulates
+        outlines instead of every shape overwriting id 0.
+        """
+        if not self._actual:
+            return
+        marker = Marker()
+        marker.header.frame_id = "link_base"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "shape_tracer_actual"
+        marker.id = self.shapes.index(shape) if shape in self.shapes else 0
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        marker.scale.x = 0.002
+        marker.color.r, marker.color.g, marker.color.b, marker.color.a = (0.95, 0.45, 0.15, 1.0)
+        marker.pose.orientation.w = 1.0
+        for p in self._actual:
+            pt = Point()
+            pt.x, pt.y, pt.z = (float(v) for v in p)
+            marker.points.append(pt)
+        arr = MarkerArray()
+        arr.markers.append(marker)
+        self.actual_pub.publish(arr)
+
+    def clear_actual(self):
+        """Drop executed-path outlines from a previous run."""
+        clear = Marker()
+        clear.header.frame_id = "link_base"
+        clear.ns = "shape_tracer_actual"
+        clear.action = Marker.DELETEALL
+        arr = MarkerArray()
+        arr.markers.append(clear)
+        self.actual_pub.publish(arr)
 
     def publish_markers(self):
         marker_array = MarkerArray()
