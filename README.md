@@ -6,7 +6,7 @@ supplied `avatarrobotics/ros-humble-xarm:20250602` container.
 
 > **You are on the `demo-designer` branch** — the core tracer plus an optional
 > browser designer. The lean submission branch is
-> [`master`](https://github.com/dhruvah/xarm-shape-tracer/tree/master); the
+> [`master`](https://github.com/dhruvah/avatar-challenge/tree/master); the
 > robot code here is identical to it, with the designer added on top.
 >
 > `start.launch.py` works exactly as it does on `master` and needs no browser.
