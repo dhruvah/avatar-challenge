@@ -1268,6 +1268,14 @@ async function pollProgress(){
     const j=await r.json();
     if(Array.isArray(j.path)) live.path=j.path;
     if(Array.isArray(j.joints)) live.joints=j.joints;
+    // Follow along: the overlay is drawn only over the shape it belongs to, so
+    // during a multi-shape run the selection tracks whichever shape the arm is
+    // on. Without this you watch shape 2 being traced while shape 1 is selected
+    // and see nothing.
+    if(j.shape && (!sel() || sel().name!==j.shape)){
+      const target=shapes.find(x=>x.name===j.shape);
+      if(target){ selId=target.id; selVtx=-1; syncPanel(); }
+    }
     live.fraction=j.fraction||0; live.tracing=!!j.tracing; live.shape=j.shape||null;
     const pct=Math.round(live.fraction*100);
     document.getElementById("barFill").style.width=pct+"%";

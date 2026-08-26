@@ -285,5 +285,21 @@ shapes = []; selId = null;
 drawLive();
 chk("live path is safe with nothing selected", ctx.calls.moveTo === 0, ctx.calls.moveTo);
 
+// --- disconnected shapes ---------------------------------------------------
+importJSON(JSON.stringify({ shapes: [
+  { name: "a", vertices: [[0,0],[0.08,0],[0.08,0.05],[0,0.05]], closed: true,
+    start_pose: { position: [0.30,-0.10,0.26], rpy: [0,0,0] } },
+  { name: "b", vertices: [[0,0],[0.07,0],[0.09,0.06],[0.01,0.05]], closed: true,
+    start_pose: { position: [0.30,0.03,0.26], rpy: [0,0,0] } },
+]}));
+chk("two disconnected shapes both load", nShapes() === 2, nShapes());
+const ex = JSON.parse(buildJSON());
+chk("each disconnected shape keeps its own start_pose",
+    ex.shapes[0].start_pose.position[1] !== ex.shapes[1].start_pose.position[1]);
+chk("each disconnected shape starts at (0,0)",
+    ex.shapes.every(sh => sh.vertices[0][0] === 0 && sh.vertices[0][1] === 0));
+chk("shapes are exported as separate entries, not merged",
+    ex.shapes.length === 2, ex.shapes.length);
+
 console.log(`\n${checks} checks, ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
