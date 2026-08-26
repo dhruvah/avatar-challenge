@@ -7,7 +7,7 @@ supplied `avatarrobotics/ros-humble-xarm:20250602` container.
 > **No browser or web service is needed to evaluate this.**
 > `start.launch.py` loads the included `config/shapes.json` and traces it
 > automatically. An optional visual designer lives on the
-> [`demo-designer`](https://github.com/dhruvah/xarm-shape-tracer/tree/demo-designer)
+> [`demo-designer`](https://github.com/dhruvah/avatar-challenge/tree/demo-designer)
 > branch; it exports the same JSON this branch consumes.
 
 ---
@@ -123,7 +123,7 @@ Both tessellate into `arc_segments` (default 16) straight sub-segments.
 ## 3. Optional: the visual designer
 
 The required evaluation path does not need it. On the
-[`demo-designer`](https://github.com/dhruvah/xarm-shape-tracer/tree/demo-designer)
+[`demo-designer`](https://github.com/dhruvah/avatar-challenge/tree/demo-designer)
 branch there is a browser designer for authoring the same JSON: draw on a
 millimetre grid, see the workspace shaded by measured manipulability, press
 **Send to robot**, and watch the trace animate live.
