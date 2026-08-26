@@ -62,6 +62,11 @@ class ShapeTracerNode(Node):
         # gives the Cartesian solver a sane IK seed.
         self.declare_parameter("home_joints", [0.0, -0.5706, 0.0, 0.5039, 0.0, 1.0745, 0.0])
         self.declare_parameter("home_on_start", True)
+        # The target and actual-path markers are latched, which means RViz holds
+        # them only while their publisher is alive. If the node exits as soon as
+        # it finishes tracing, the outlines vanish from RViz at exactly the
+        # moment there is something to look at.
+        self.declare_parameter("hold_after_trace", True)
 
         self.lift_height = self.get_parameter("lift_height").value
         self.arc_segments = self.get_parameter("arc_segments").value
@@ -70,6 +75,7 @@ class ShapeTracerNode(Node):
         self.blend = self.get_parameter("blend").value
         self.home_joints = list(self.get_parameter("home_joints").value)
         self.home_on_start = self.get_parameter("home_on_start").value
+        self.hold_after_trace = self.get_parameter("hold_after_trace").value
 
         shapes_file = self.get_parameter("shapes_file").value
 
@@ -93,6 +99,10 @@ class ShapeTracerNode(Node):
         self._chain = None
         self._recording = False
         self._actual = []
+        # Executed paths for every shape so far. The publisher is latched with
+        # depth 1, so each message must carry the whole set -- otherwise an RViz
+        # that connects late sees only the shape that happened to finish last.
+        self._traced_paths = []
         self.create_subscription(String, "/robot_description", self._on_urdf, latched)
 
         for name, cli in [
@@ -393,39 +403,52 @@ class ShapeTracerNode(Node):
     # -- RViz visualization (bonus) ----------------------------------------------
 
     def publish_actual(self, shape):
-        """Draw the executed path for one shape, keyed by its index.
+        """Publish the executed path for every shape traced so far.
 
-        Each shape gets its own marker id so a multi-shape run accumulates
-        outlines instead of every shape overwriting id 0.
+        One marker id per shape, and the whole set in every message: the
+        publisher is latched with depth 1, so a partial message would leave an
+        RViz that connects late showing only the most recent shape.
         """
-        if not self._actual:
+        if self._actual:
+            index = self.shapes.index(shape) if shape in self.shapes else len(self._traced_paths)
+            self._traced_paths.append((index, list(self._actual)))
+        if not self._traced_paths:
             return
+
+        arr = MarkerArray()
+        arr.markers.append(self._delete_all("shape_tracer_actual"))
+        for index, path in self._traced_paths:
+            marker = Marker()
+            marker.header.frame_id = "link_base"
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = "shape_tracer_actual"
+            marker.id = index
+            marker.type = Marker.LINE_STRIP
+            marker.action = Marker.ADD
+            marker.scale.x = 0.002
+            marker.color.r, marker.color.g, marker.color.b, marker.color.a = (
+                0.95, 0.45, 0.15, 1.0)
+            marker.pose.orientation.w = 1.0
+            for p in path:
+                pt = Point()
+                pt.x, pt.y, pt.z = (float(v) for v in p)
+                marker.points.append(pt)
+            arr.markers.append(marker)
+        self.actual_pub.publish(arr)
+
+    @staticmethod
+    def _delete_all(namespace):
         marker = Marker()
         marker.header.frame_id = "link_base"
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = "shape_tracer_actual"
-        marker.id = self.shapes.index(shape) if shape in self.shapes else 0
-        marker.type = Marker.LINE_STRIP
-        marker.action = Marker.ADD
-        marker.scale.x = 0.002
-        marker.color.r, marker.color.g, marker.color.b, marker.color.a = (0.95, 0.45, 0.15, 1.0)
-        marker.pose.orientation.w = 1.0
-        for p in self._actual:
-            pt = Point()
-            pt.x, pt.y, pt.z = (float(v) for v in p)
-            marker.points.append(pt)
-        arr = MarkerArray()
-        arr.markers.append(marker)
-        self.actual_pub.publish(arr)
+        marker.ns = namespace
+        marker.action = Marker.DELETEALL
+        return marker
 
     def clear_actual(self):
         """Drop executed-path outlines from a previous run."""
-        clear = Marker()
-        clear.header.frame_id = "link_base"
-        clear.ns = "shape_tracer_actual"
-        clear.action = Marker.DELETEALL
+        self._traced_paths = []
         arr = MarkerArray()
-        arr.markers.append(clear)
+        arr.markers.append(self._delete_all("shape_tracer_actual"))
         self.actual_pub.publish(arr)
 
     def publish_markers(self):
@@ -433,11 +456,7 @@ class ShapeTracerNode(Node):
         # The publisher is latched, so a shorter design would otherwise leave
         # the previous run's extra outlines on screen forever. DELETEALL first,
         # in the same message, so a late subscriber still gets a clean set.
-        clear = Marker()
-        clear.header.frame_id = "link_base"
-        clear.ns = "shape_tracer_targets"
-        clear.action = Marker.DELETEALL
-        marker_array.markers.append(clear)
+        marker_array.markers.append(self._delete_all("shape_tracer_targets"))
         for i, shape in enumerate(self.shapes):
             waypoints = build_shape_waypoints(
                 vertices=shape.vertices,
@@ -473,6 +492,13 @@ def main(argv=None):
     try:
         node = ShapeTracerNode()
         node.trace_all()
+        if node.hold_after_trace:
+            node.get_logger().info(
+                "Tracing complete. Holding so RViz keeps the outlines on screen "
+                "-- press Ctrl-C to exit.")
+            rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001 - surface any failure clearly and exit non-zero
@@ -484,7 +510,8 @@ def main(argv=None):
     finally:
         if node is not None:
             node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
