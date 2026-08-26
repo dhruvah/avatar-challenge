@@ -6,6 +6,7 @@ to RViz for visual comparison against the arm's actual path.
 import sys
 import time
 
+import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
@@ -18,7 +19,8 @@ from visualization_msgs.msg import Marker, MarkerArray
 from xarm_msgs.srv import PlanPose, PlanSingleStraight, PlanExec, PlanJoint
 
 from avatar_challenge.blended_path import BlendedPathExecutor
-from avatar_challenge.geometry import build_shape_waypoints, Waypoint
+from avatar_challenge.geometry import (build_shape_waypoints, Waypoint, Frame,
+                                        rpy_to_quaternion)
 from avatar_challenge.kinematics import Chain
 from avatar_challenge.shapes_io import load_shapes, ShapeDef
 
@@ -27,6 +29,9 @@ from avatar_challenge.shapes_io import load_shapes, ShapeDef
 # small tool motions need large joint speeds. Calibrated from a workspace sweep
 # -- see tools/workspace_quality.py and the README.
 SINGULARITY_WARN = 0.010
+
+# Most points the live-progress endpoint will return per poll.
+PROGRESS_PATH_CAP = 400
 
 
 class IKServiceError(RuntimeError):
@@ -94,6 +99,10 @@ class ShapeTracerNode(Node):
         self._chain = None
         self._recording = False
         self._actual = []
+        # Live progress for the designer UI: which shape, how far through, and
+        # the tool path so far expressed in that shape's own 2D frame.
+        self._progress = None
+        self._frame = None
         self.create_subscription(String, "/robot_description", self._on_urdf, latched)
 
         for name, cli in [
@@ -323,12 +332,24 @@ class ShapeTracerNode(Node):
             self.blender.retime(trajectory, shape.speed)
             self.report_trajectory(shape, trajectory, fraction, len(poses))
             self.publish_planned(trajectory)
+            pts = trajectory.joint_trajectory.points
+            dur = pts[-1].time_from_start
+            self._actual = []
+            self._frame = Frame(position=np.array(shape.position, dtype=float),
+                                quaternion=rpy_to_quaternion(*shape.rpy))
+            self._progress = {
+                "shape": shape.name,
+                "duration": dur.sec + dur.nanosec * 1e-9,
+                "start": time.time(),
+            }
             self._recording = True
             try:
                 self.blender.execute(trajectory, desc)
             finally:
                 self._recording = False
                 self.publish_actual()
+                if self._progress:
+                    self._progress["done"] = True
             return
 
         for i, wp in enumerate(waypoints[1:], start=1):
@@ -387,6 +408,44 @@ class ShapeTracerNode(Node):
             msg.trajectory_start.joint_state = self._joint_state
         msg.trajectory.append(trajectory)
         self.display_pub.publish(msg)
+
+    def progress_snapshot(self):
+        """What the designer needs to animate the trace, in the shape's own frame.
+
+        Projecting into the shape's 2D plane here (rather than shipping world
+        points and doing it in the browser) keeps one implementation of the
+        transform, so the live overlay cannot drift from the drawing it is
+        drawn over.
+        """
+        prog = self._progress
+        if not prog:
+            return {"tracing": False}
+        pts = list(self._actual)          # atomic snapshot; ROS thread appends
+        # A long trace accumulates thousands of samples and the UI polls several
+        # times a second. Uniformly decimate to a cap that is still far denser
+        # than the canvas can show, keeping the newest point so the leading dot
+        # stays exactly where the tool is.
+        if len(pts) > PROGRESS_PATH_CAP:
+            stride = len(pts) / PROGRESS_PATH_CAP
+            idx = sorted({int(i * stride) for i in range(PROGRESS_PATH_CAP)} | {len(pts) - 1})
+            pts = [pts[i] for i in idx]
+        local = []
+        if self._frame is not None:
+            R = self._frame.rotation
+            origin = self._frame.position
+            for p in pts:
+                d = R.T @ (np.asarray(p) - origin)
+                local.append([round(float(d[0]) * 1000, 2), round(float(d[1]) * 1000, 2)])
+        elapsed = time.time() - prog["start"]
+        frac = 1.0 if prog.get("done") else min(1.0, elapsed / max(prog["duration"], 1e-6))
+        return {
+            "tracing": not prog.get("done", False),
+            "shape": prog["shape"],
+            "fraction": round(frac, 4),
+            "elapsed": round(elapsed, 2),
+            "duration": round(prog["duration"], 2),
+            "path": local,
+        }
 
     def publish_actual(self):
         """Draw where the tool really went, for comparison with the target."""

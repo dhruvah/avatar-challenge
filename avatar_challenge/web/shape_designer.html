@@ -28,6 +28,7 @@
   --sing-wash:rgba(176,52,47,.16);
   --marg:#B07A18;
   --marg-wash:rgba(176,122,24,.11);
+  --live:#8A3FC0;
   --shadow:rgba(17,24,32,.10);
   --focus:#12A0B4;
 }
@@ -175,6 +176,17 @@ label.check input{accent-color:var(--pen)}
   font-size:11px; color:var(--ink-3); line-height:1.45;
   border-left:2px solid var(--rule); padding-left:8px; margin-top:8px;
 }
+.tracebar{
+  position:fixed; left:50%; bottom:66px; transform:translateX(-50%);
+  display:flex; align-items:center; gap:10px; padding:8px 14px;
+  background:var(--surface); border:1px solid var(--rule); border-radius:6px;
+  box-shadow:0 4px 14px var(--shadow); font-size:12px;
+}
+.tracebar[hidden]{display:none}
+.tracebar .bar{width:190px; height:6px; border-radius:99px; background:var(--surface-2); overflow:hidden}
+.tracebar .bar i{display:block; height:100%; width:0%; background:var(--live);
+  transition:width .18s linear}
+@media (prefers-reduced-motion:reduce){.tracebar .bar i{transition:none}}
 .toast{
   position:fixed; left:50%; bottom:26px; transform:translateX(-50%);
   background:var(--ink); color:var(--paper); padding:8px 15px; border-radius:5px;
@@ -334,6 +346,10 @@ label.check input{accent-color:var(--pen)}
     <span id="stReach">&mdash;</span><span class="sep"></span>
     <span>scale <b id="stZoom">&mdash;</b></span>
   </div>
+</div>
+<div class="tracebar" id="tracebar" hidden>
+  <div class="bar"><i id="barFill"></i></div>
+  <span class="mono" id="barText">\u2014</span>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -604,6 +620,7 @@ function draw(){
   drawGrid(w,h);
   for (const s of shapes) drawShape(s, s.id===selId);
   drawPending();
+  drawLive();
   document.getElementById("stZoom").textContent = view.scale.toFixed(2)+" px/mm";
   draw3d();
 }
@@ -666,6 +683,24 @@ function drawVerts(s, isSel){
     if(i===0){ ctx.beginPath(); ctx.arc(q[0],q[1],8.5,0,7);
       ctx.lineWidth=1.2; ctx.strokeStyle=css("--pen"); ctx.stroke(); }
   });
+}
+
+/* live trace overlay: the tool path the robot reports while it is drawing,
+   already projected into this shape's 2D frame by the server */
+let live={path:[], shape:null, fraction:0, tracing:false};
+function drawLive(){
+  if(!live.path.length) return;
+  ctx.save();
+  ctx.strokeStyle=css("--live"); ctx.lineWidth=2.6;
+  ctx.lineJoin="round"; ctx.lineCap="round";
+  ctx.beginPath();
+  live.path.forEach((p,i)=>{ const q=mm2px(p[0],p[1]); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+  ctx.stroke();
+  const tip=live.path[live.path.length-1], q=mm2px(tip[0],tip[1]);
+  ctx.beginPath(); ctx.arc(q[0],q[1],5.5,0,7);
+  ctx.fillStyle=css("--live"); ctx.fill();
+  ctx.strokeStyle=css("--surface"); ctx.lineWidth=1.6; ctx.stroke();
+  ctx.restore();
 }
 
 let pending=null; // in-progress path
@@ -1156,16 +1191,43 @@ async function pollRobot(){
     setRobot(j.busy?"busy":"on", j.busy?"tracing\u2026":"xArm7 connected");
   }catch(_){ setRobot("off","no robot"); }
 }
+let livePoll=null;
+function showBar(on){ document.getElementById("tracebar").hidden=!on; }
+async function pollProgress(){
+  try{
+    const r=await fetch("/api/progress",{cache:"no-store"});
+    if(!r.ok) return;
+    const j=await r.json();
+    if(Array.isArray(j.path)) live.path=j.path;
+    live.fraction=j.fraction||0; live.tracing=!!j.tracing; live.shape=j.shape||null;
+    const pct=Math.round(live.fraction*100);
+    document.getElementById("barFill").style.width=pct+"%";
+    const which = j.shape_total>1 ? ` (${(j.shape_index||0)+1}/${j.shape_total})` : "";
+    document.getElementById("barText").textContent=
+      `${j.shape||"tracing"}${which} \u00b7 ${pct}% \u00b7 ${(j.elapsed||0).toFixed(1)}s`;
+    draw();
+  }catch(_){ /* link dropped; the status poll reports it */ }
+}
+function startLive(){
+  showBar(true); live.path=[];
+  if(livePoll) clearInterval(livePoll);
+  livePoll=setInterval(pollProgress, 150);
+}
+function stopLive(){
+  if(livePoll){ clearInterval(livePoll); livePoll=null; }
+  pollProgress();                       // one last frame so the path is complete
+  setTimeout(()=>showBar(false), 1400);
+}
 document.getElementById("btnSend").onclick=async()=>{
   const btn=document.getElementById("btnSend");
-  btn.disabled=true; setRobot("busy","tracing\u2026");
+  btn.disabled=true; setRobot("busy","tracing\u2026"); startLive();
   try{
     const r=await fetch("/api/trace",{method:"POST",
       headers:{"Content-Type":"application/json"}, body:buildJSON()});
     const j=await r.json();
     toast(j.ok ? j.message : "Robot refused it \u2014 "+(j.error||"unknown error"));
   }catch(err){ toast("Could not reach the robot: "+err.message); }
-  finally{ pollRobot(); }
+  finally{ stopLive(); pollRobot(); }
 };
 pollRobot(); setInterval(pollRobot, 4000);
 

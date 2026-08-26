@@ -51,6 +51,17 @@ class _Handler(BaseHTTPRequestHandler):
                     return self._send(200, f.read(), "text/html; charset=utf-8")
             except OSError as exc:
                 return self._send(500, json.dumps({"error": f"page missing: {exc}"}))
+        if path == "/api/progress":
+            # Read-only snapshot of node state. Safe from this thread: it only
+            # reads simple attributes and copies a list, no ROS calls.
+            try:
+                snap = self.server.node.progress_snapshot()
+            except Exception as exc:                      # noqa: BLE001
+                return self._send(500, json.dumps({"error": str(exc)}))
+            snap["busy"] = self.server.busy.is_set()
+            snap["shape_index"] = self.server.index
+            snap["shape_total"] = self.server.total
+            return self._send(200, json.dumps(snap))
         if path == "/api/status":
             return self._send(200, json.dumps({
                 "connected": True,
@@ -98,6 +109,8 @@ class DesignerServer:
         self.port = port
         self.jobs = queue.Queue()
         self.busy = threading.Event()
+        self.index = 0
+        self.total = 0
         self._httpd = None
 
     def start(self):
@@ -106,6 +119,8 @@ class DesignerServer:
         httpd.page_path = self.page_path
         httpd.jobs = self.jobs
         httpd.busy = self.busy
+        httpd.index = 0
+        httpd.total = 0
         self._httpd = httpd
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         self.node.get_logger().info(
@@ -146,7 +161,9 @@ class DesignerServer:
         shapes = self.node.reload(self.config_path)
         names = [s.name for s in shapes]
         self.node.publish_markers()
-        for shape in shapes:
+        self._httpd.total = len(shapes)
+        for i, shape in enumerate(shapes):
+            self._httpd.index = i
             self.node.trace_shape(shape)
         self.node.get_logger().info(f"Traced {len(shapes)} shape(s) from the designer")
         return {"ok": True, "traced": names,

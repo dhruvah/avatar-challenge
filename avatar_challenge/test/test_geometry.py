@@ -253,3 +253,37 @@ def test_missing_shapes_key_is_rejected(tmp_path):
     p.write_text('{"nope": []}')
     with pytest.raises(ValueError, match="shapes"):
         load_shapes(str(p))
+
+
+# --------------------------------------------------------------------------
+# live-progress projection (world -> the shape's own 2D frame)
+# --------------------------------------------------------------------------
+
+def _project(frame, world_pts):
+    """Mirror of ShapeTracerNode.progress_snapshot's projection."""
+    R, origin = frame.rotation, frame.position
+    return [(R.T @ (np.asarray(p) - origin))[:2] * 1000 for p in world_pts]
+
+
+@pytest.mark.parametrize("rpy", [(0, 0, 0), (0, 0, 0.7854), (math.pi / 2, 0, 0),
+                                 (0.4, -0.3, 1.9)])
+def test_progress_projection_inverts_the_plane_transform(rpy):
+    """Points sent to the robot must come back as the same 2D coordinates."""
+    pos = [0.30, -0.05, 0.28]
+    local_mm = [(0, 0), (100, 0), (100, 80), (0, 80), (37.5, 12.25)]
+    frame = Frame(position=np.array(pos), quaternion=rpy_to_quaternion(*rpy))
+    world = [frame.point_3d(x / 1000, y / 1000) for x, y in local_mm]
+    back = _project(frame, world)
+    for (x, y), got in zip(local_mm, back):
+        assert np.allclose(got, [x, y], atol=1e-6)
+
+
+def test_progress_projection_drops_the_out_of_plane_component():
+    """A hover point above the plane projects onto the same 2D spot as its
+    footprint -- the live overlay should not jump during pen-up moves."""
+    pos, rpy = [0.30, 0.0, 0.25], [0.0, 0.0, 0.5]
+    frame = Frame(position=np.array(pos), quaternion=rpy_to_quaternion(*rpy))
+    on_plane = frame.point_3d(0.05, 0.02)
+    hovering = on_plane + frame.normal() * 0.03
+    assert np.allclose(_project(frame, [on_plane])[0],
+                       _project(frame, [hovering])[0], atol=1e-9)
