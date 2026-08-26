@@ -10,6 +10,7 @@ import sys
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
+from rclpy.parameter import Parameter
 
 from avatar_challenge.designer_server import DesignerServer
 from avatar_challenge.shape_tracer_node import ShapeTracerNode
@@ -31,13 +32,19 @@ def main(argv=None):
     node = None
     server = None
     try:
-        node = ShapeTracerNode()
+        share = get_package_share_directory("avatar_challenge")
+        # The tracer requires a shapes file; the designer supplies shapes over
+        # HTTP instead, so default the parameter rather than making every
+        # `ros2 run` of this node pass one it will not use.
+        node = ShapeTracerNode(parameter_overrides=[
+            Parameter("shapes_file", Parameter.Type.STRING,
+                      os.path.join(share, "config", "shapes.json")),
+        ])
         node.declare_parameter("port", 8080)
         # Loopback by default: this moves a robot, and should not be reachable
         # from the network unless someone deliberately says so.
         node.declare_parameter("bind_address", "127.0.0.1")
 
-        share = get_package_share_directory("avatar_challenge")
         server = DesignerServer(
             node,
             page_path=os.path.join(share, "web", "shape_designer.html"),

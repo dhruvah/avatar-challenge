@@ -47,8 +47,8 @@ def _to_pose_msg(position, quaternion) -> Pose:
 
 
 class ShapeTracerNode(Node):
-    def __init__(self):
-        super().__init__("shape_tracer_node")
+    def __init__(self, **node_kwargs):
+        super().__init__("shape_tracer_node", **node_kwargs)
 
         self.declare_parameter("shapes_file", "")
         self.declare_parameter("lift_height", 0.03)
