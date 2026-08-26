@@ -3,10 +3,12 @@
 # Based on xarm_moveit_config/rviz/moveit.rviz, with three changes so the result
 # is visible without configuring RViz by hand:
 #   * MarkerArray displays for the target outlines and the executed tool path
-#   * Show Trail on the planned path, which is off in the stock config, so the
-#     trajectory flashes once and is easy to miss. Loop Animation is left OFF on
-#     purpose: it replays the planned path forever with a ghost arm, which reads
-#     as the robot executing over and over.
+#   * MotionPlanning's Show Trail and Loop Animation are both left OFF. They are
+#     the obvious way to "make the trajectory visible" and both are wrong here:
+#     Loop Animation replays the path forever with a ghost arm, and Show Trail
+#     draws a whole ghost robot at every waypoint, which piles ~20 translucent
+#     arms on top of each other. The executed path is shown as a line instead,
+#     by the Actual tool path display below.
 Panels:
 - Class: rviz_common/Displays
   Help Height: 78
@@ -127,7 +129,7 @@ Visualization Manager:
       Robot Color: 150; 50; 150
       Show Robot Collision: false
       Show Robot Visual: true
-      Show Trail: true
+      Show Trail: false
       State Display Time: 0.05 s
       Trail Step Size: 1
       Trajectory Topic: display_planned_path
