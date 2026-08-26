@@ -248,6 +248,34 @@ selId = shapes.find(x => x.name === "sq").id;
 ctx.calls.moveTo = 0;
 drawLive();
 chk("live path draws over the shape it belongs to", ctx.calls.moveTo > 0, ctx.calls.moveTo);
+
+// Regression: the robot reports the path relative to the shape's FIRST VERTEX
+// (that is what start_pose pins), not the canvas origin. Drawing it without
+// adding that offset back put the whole trace in the wrong place on screen.
+(() => {
+  const sq = shapes.find(x => x.name === "sq");
+  selId = sq.id;
+  // move the shape well away from the canvas origin
+  const dx = 250, dy = -180;
+  sq.verts.forEach(v => { v.x += dx; v.y += dy; });
+  live.shape = "sq";
+  live.path = [[0, 0], [0, 100], [100, 100]];   // as the robot reports it
+  const seen = [];
+  const realMove = ctx.moveTo, realLine = ctx.lineTo;
+  ctx.moveTo = function (x, y) { seen.push([x, y]); };
+  ctx.lineTo = function (x, y) { seen.push([x, y]); };
+  drawLive();
+  ctx.moveTo = realMove; ctx.lineTo = realLine;
+  const expect = mm2px(sq.verts[0].x, sq.verts[0].y);
+  const got = seen[0];
+  const err = got ? Math.hypot(got[0] - expect[0], got[1] - expect[1]) : 1e9;
+  chk("live path starts at the shape's first vertex, not the canvas origin",
+      err < 0.5, err.toFixed(1) + "px off");
+  const originPx = mm2px(0, 0);
+  const atOrigin = got && Math.hypot(got[0] - originPx[0], got[1] - originPx[1]) < 0.5;
+  chk("live path is NOT anchored to the canvas origin", !atOrigin);
+  sq.verts.forEach(v => { v.x -= dx; v.y -= dy; });
+})();
 ctx.calls.moveTo = 0;
 selId = shapes.find(x => x.name === "tri").id;
 drawLive();

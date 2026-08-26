@@ -730,14 +730,19 @@ function drawLive(){
   // meaningful over that shape. Without this, tracing A then selecting B drew
   // A's path on top of B.
   const s=sel();
-  if(!s || (live.shape && live.shape!==s.name)) return;
+  if(!s || (live.shape && live.shape!==s.name) || !s.verts.length) return;
+  // The exported shape folds its first vertex into start_pose.position, so the
+  // robot reports the path relative to that vertex. The canvas draws in raw
+  // canvas coordinates, where the first vertex is wherever it was drawn -- add
+  // the offset back or the whole trace appears shifted to the canvas origin.
+  const ox=s.verts[0].x, oy=s.verts[0].y;
   ctx.save();
   ctx.strokeStyle=css("--live"); ctx.lineWidth=2.6;
   ctx.lineJoin="round"; ctx.lineCap="round";
   ctx.beginPath();
-  live.path.forEach((p,i)=>{ const q=mm2px(p[0],p[1]); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+  live.path.forEach((p,i)=>{ const q=mm2px(p[0]+ox,p[1]+oy); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
   ctx.stroke();
-  const tip=live.path[live.path.length-1], q=mm2px(tip[0],tip[1]);
+  const tip=live.path[live.path.length-1], q=mm2px(tip[0]+ox,tip[1]+oy);
   ctx.beginPath(); ctx.arc(q[0],q[1],5.5,0,7);
   ctx.fillStyle=css("--live"); ctx.fill();
   ctx.strokeStyle=css("--surface"); ctx.lineWidth=1.6; ctx.stroke();
