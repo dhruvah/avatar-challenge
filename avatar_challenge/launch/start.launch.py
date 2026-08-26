@@ -7,6 +7,8 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+    # show_rviz:=false suppresses the stock MoveIt RViz so we can start our own
+    # with a layout that already has the target and actual-path displays in it.
     xarm_moveit_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
@@ -17,6 +19,20 @@ def generate_launch_description():
                 ]
             )
         ),
+        launch_arguments={"show_rviz": "false"}.items(),
+    )
+
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        output="screen",
+        arguments=[
+            "-d",
+            PathJoinSubstitution(
+                [FindPackageShare("avatar_challenge"), "rviz", "shape_tracer.rviz"]
+            ),
+        ],
     )
 
     # xarm_planner/launch/_robot_planner.launch.py starts xarm_planner_node,
@@ -58,6 +74,7 @@ def generate_launch_description():
                 # per-edge moves (exact corners, jerkier motion).
                 "blend": True,
                 "blend_max_step": 0.005,
+                "hold_after_trace": True,
             }
         ],
     )
@@ -65,6 +82,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             xarm_moveit_launch,
+            rviz_node,
             xarm_planner_launch,
             shape_tracer_node,
         ]

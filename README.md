@@ -39,13 +39,25 @@ RViz opens with MoveIt and the arm traces the four sample shapes in
 > calls meant for the first. Give each its own `ROS_DOMAIN_ID`. This looks
 > exactly like a planning bug and is not one.
 
-### RViz displays
+### What you should see
 
-| Topic | Shows |
-|---|---|
-| `shape_tracer/target_shapes` | Intended outlines (green), latched |
-| `shape_tracer/actual_path` | Where the tool actually went (orange), one marker per shape |
-| `/display_planned_path` | The planned trajectory, animated by the MotionPlanning display |
+RViz opens with `rviz/shape_tracer.rviz`, which already has every display
+switched on — nothing to add by hand:
+
+| Display | Topic | Shows |
+|---|---|---|
+| Target shapes | `shape_tracer/target_shapes` | Intended outlines, green |
+| Actual tool path | `shape_tracer/actual_path` | Where the tool really went, orange |
+| MotionPlanning | `/display_planned_path` | The planned trajectory, with its trail |
+
+Two details that make this visible rather than theoretical:
+
+- **The node holds after tracing** (`hold_after_trace`, default true). The marker
+  publishers are latched, so RViz keeps the outlines only while their publisher
+  is alive; exiting immediately would clear the screen at the moment there is
+  something to look at. Ctrl-C when finished.
+- **Show Trail and Loop Animation are enabled** on the planned path. They are off
+  in the stock MoveIt layout, which makes the trajectory flash once and vanish.
 
 ---
 
@@ -117,6 +129,7 @@ Both tessellate into `arc_segments` (default 16) straight sub-segments.
 | `closed` | `true` | Default for shapes that don't say |
 | `blend` | `true` | One continuous trajectory vs. per-edge moves |
 | `blend_max_step` | `0.005` | Cartesian interpolation step (m) |
+| `hold_after_trace` | `true` | Keep the node alive so RViz retains the markers |
 | `home_on_start` | `true` | Move to the ready pose before tracing |
 | `service_timeout_sec` | `120.0` | Planner / IK service wait |
 
@@ -327,6 +340,7 @@ avatar_challenge/
     shape_tracer_node.py  preflight, motion strategy, RViz output
   config/shapes.json      the four sample shapes
   launch/start.launch.py  MoveIt + RViz + xarm_planner + the tracer
+  rviz/shape_tracer.rviz  RViz layout with the displays already added
   test/                   146 tests, no robot required
   web/shape_designer.html the designer page
   launch/designer.launch.py

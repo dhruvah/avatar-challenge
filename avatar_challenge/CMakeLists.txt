@@ -16,6 +16,7 @@ install(DIRECTORY
   launch
   config
   web
+  rviz
   DESTINATION share/${PROJECT_NAME}
 )
 
