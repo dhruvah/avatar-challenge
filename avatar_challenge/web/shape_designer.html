@@ -529,6 +529,12 @@ function newShape(name, verts, pose, opts){
 }
 const sel = () => shapes.find(s => s.id === selId) || null;
 
+/* The reach overlay maps canvas -> world, which needs a plane. Keeping the last
+   used one means deleting every shape no longer takes the workspace shading
+   with it -- you can still see where the arm can reach before drawing. */
+let lastPose = {x:300, y:-50, z:250, roll:0, pitch:0, yaw:0, tilt:0, facing:0, spin:0};
+const activePose = () => (sel() ? sel().pose : lastPose);
+
 /* seed: the challenge PDF's square, placed where the arm can actually reach */
 shapes.push(newShape("square_45deg",
   [{x:0,y:0,kind:"line"},{x:0,y:100,kind:"line"},{x:100,y:100,kind:"line"},{x:100,y:0,kind:"line"}],
@@ -672,13 +678,13 @@ function draw(){
 /* the centrepiece: shade the canvas by measured workspace quality, so you can
    see singular ground before you draw on it */
 function drawReachWash(w,h){
-  const s=sel(); if(!s) return;
-  const cell=9, tilt=s.pose.tilt;
+  const pose=activePose();
+  const cell=9, tilt=pose.tilt;
   const fills={".":css("--noreach-wash"), "1":css("--sing-wash"), "2":css("--marg-wash")};
   for(let py=0; py<h; py+=cell){
     for(let px=0; px<w; px+=cell){
       const [mx,my]=px2mm(px+cell/2, py+cell/2);
-      const q=worldQuality(toWorld(mx,my,s.pose), tilt);
+      const q=worldQuality(toWorld(mx,my,pose), tilt);
       if(q!=="3"){ ctx.fillStyle=fills[q]; ctx.fillRect(px,py,cell,cell); }
     }
   }
@@ -779,7 +785,7 @@ function project(p, W, H, sc){
   const xr = p[0]*ca + p[1]*sa, yr = -p[0]*sa + p[1]*ca;
   return [W/2 + yr*sc, H/2 + 40 - (p[2]*ce - xr*se)*sc];
 }
-function s0tilt(){ const s=sel(); return s?s.pose.tilt:0; }
+function s0tilt(){ return activePose().tilt; }
 function draw3d(){
   const v=document.getElementById("view3d"), c=v.getContext("2d");
   const W=v.width/dpr, H=v.height/dpr, sc=Math.min(W,H)/1.75;
@@ -964,6 +970,23 @@ function toast(msg){
   t.textContent=msg; t.classList.add("on");
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("on"),1700);
 }
+/* With nothing selected the shape controls have nothing to act on. Blank and
+   disable them rather than leaving the previous shape's numbers on screen. */
+function showEmptyPanel(){
+  ["pX","pY","pZ","oTilt","nTilt","oFace","nFace","oSpin","nSpin","sName","sSpeed"]
+    .forEach(id=>{ const e=document.getElementById(id); e.value=""; e.disabled=true; });
+  ["sClosed","sSmooth"].forEach(id=>{ const e=document.getElementById(id);
+    e.checked=false; e.disabled=true; });
+  document.getElementById("tiltWord").textContent="";
+  document.getElementById("faceNote").textContent="";
+  document.getElementById("rpyOut").textContent="no shape selected \u2014 draw one, or press Import JSON";
+  document.getElementById("vtxBox").style.display="none";
+}
+function enablePanel(){
+  ["pX","pY","pZ","oTilt","nTilt","oSpin","nSpin","sName","sSpeed",
+   "sClosed","sSmooth"].forEach(id=>{ document.getElementById(id).disabled=false; });
+}
+
 function syncPanel(){
   const s=sel();
   document.getElementById("jsonOut").textContent = buildJSON();
@@ -982,7 +1005,9 @@ function syncPanel(){
     el.querySelector(".x").onclick=ev=>{ ev.stopPropagation(); deleteShape(sh.id); };
     list.appendChild(el);
   });
-  if(!s) return;
+  if(!s){ showEmptyPanel(); return; }
+  enablePanel();
+  lastPose = Object.assign({}, s.pose);
   const set=(id,val)=>{ const e=document.getElementById(id); if(document.activeElement!==e) e.value=val; };
   set("pX",s.pose.x); set("pY",s.pose.y); set("pZ",s.pose.z);
   const t=Math.round(s.pose.tilt), f=Math.round(s.pose.facing), sp=Math.round(s.pose.spin);

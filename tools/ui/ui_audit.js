@@ -346,5 +346,40 @@ chk("shapes are exported as separate entries, not merged",
   chk("readout marks the degree values as degrees", txt.includes("\u00B0"), txt);
 })();
 
+// --- empty canvas keeps the workspace visible (regression) ----------------
+// Clearing every shape used to take the reach overlay with it, because the
+// overlay needs a plane to map canvas -> world and bailed with no selection.
+(() => {
+  importJSON(FIXTURE);
+  const s = sel();
+  s.pose.tilt = 40; s.pose.x = 350; applyTfs(s); syncPanel();
+  ctx.calls.fillRect = 0; draw();
+  const withShape = ctx.calls.fillRect;
+  chk("workspace shading is drawn with a shape present", withShape > 0, withShape);
+
+  press("btnClear");
+  chk("clear all really empties the canvas", nShapes() === 0);
+  ctx.calls.fillRect = 0; draw();
+  const withoutShape = ctx.calls.fillRect;
+  chk("workspace shading survives clear all", withoutShape > 0, withoutShape);
+  chk("the remembered plane is the one last used",
+      Math.abs(lastPose.tilt - 40) < 1e-9 && Math.abs(lastPose.x - 350) < 1e-9,
+      `${lastPose.tilt}, ${lastPose.x}`);
+
+  // and the panel should be blank rather than showing the deleted shape
+  chk("shape controls are disabled when nothing is selected",
+      document.getElementById("sName").disabled === true);
+  chk("stale rpy text is replaced",
+      /no shape selected/.test(document.getElementById("rpyOut").textContent),
+      document.getElementById("rpyOut").textContent);
+  chk("stale tilt wording is cleared",
+      document.getElementById("tiltWord").textContent === "");
+
+  // drawing again re-enables everything
+  importJSON(FIXTURE);
+  chk("controls come back when a shape is selected",
+      document.getElementById("sName").disabled === false);
+})();
+
 console.log(`\n${checks} checks, ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
