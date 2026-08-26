@@ -4,7 +4,7 @@ ROS 2 (Humble) software that commands a simulated UFactory xArm 7 to trace a lis
 of 2D shapes in the air, each on its own 3D plane. Built and verified inside the
 supplied `avatarrobotics/ros-humble-xarm:20250602` container.
 
-> **You are on the `demo-designer` branch** — the core tracer plus an optional
+> **You are on the `demo-gui` branch** — the core tracer plus an optional
 > browser designer. The lean submission branch is
 > [`master`](https://github.com/dhruvah/avatar-challenge/tree/master); the
 > robot code here is identical to it, with the designer added on top.
