@@ -272,16 +272,21 @@ solution and still sit where small tool motions demand large joint speeds.
 ```bash
 colcon build --packages-select avatar_challenge
 colcon test --packages-select avatar_challenge
-colcon test-result --all --verbose      # 4 suites, 146 tests
+colcon test-result --all --verbose      # 4 suites, 93 tests
 
 python3 tools/ui/run_ui_audit.py        # 99 UI checks, no browser needed
 ```
 
-The designer suite covers the parts that are expensive to get wrong: two
-simultaneous submissions admit exactly one (barrier-raced, the loser gets HTTP
-409), a request whose client timed out never executes afterwards, an invalid
-payload leaves the previously saved design untouched, and a failed trace reports
-`failed` with its error rather than 100%.
+The suite is deliberately small: the geometry properties, three synthetic
+kinematics checks, and a regression for each bug actually found -- a partial
+Cartesian plan never reaching the controller, an accepted goal that times out
+requesting cancellation, re-timed nanoseconds being normalised, invalid shape
+names rejected, two simultaneous submissions admitting exactly one (the loser
+gets HTTP 409), invalid input preserving the last valid design, and an aborted
+trace reporting failure rather than 100%.
+
+The trajectory sweep, the browser audit and the TF-based path measurements are
+tools, not tests: they need a running robot, so `colcon test` does not run them.
 
 Tests need neither ROS nor a robot — `geometry.py`, `shapes_io.py` and
 `kinematics.py` import only numpy and the standard library, which is why the
@@ -341,7 +346,7 @@ avatar_challenge/
   config/shapes.json      the four sample shapes
   launch/start.launch.py  MoveIt + RViz + xarm_planner + the tracer
   rviz/shape_tracer.rviz  RViz layout with the displays already added
-  test/                   146 tests, no robot required
+  test/                   93 tests, no robot required
   web/shape_designer.html the designer page
   launch/designer.launch.py
 tools/

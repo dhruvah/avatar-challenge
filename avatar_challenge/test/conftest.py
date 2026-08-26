@@ -2,28 +2,22 @@
 
 `geometry.py`, `shapes_io.py` and `kinematics.py` are plain numpy, but
 `blended_path.py` and `designer_server.py` import ROS message types at module
-level. Under `colcon test` those are real; run directly with pytest they are
-not, so stand-ins are installed only when the real ones cannot be imported.
+level.
 
-Each test module previously carried its own copy of this, gated on whether
-`rclpy` was already in `sys.modules` -- which made the result depend on import
-order and broke when the whole directory was collected at once.
+The stand-ins below are installed *unconditionally*, not only when ROS is
+absent. These are unit tests of pure logic -- re-timing arithmetic, goal
+cancellation, request reservation -- and they should behave identically whether
+or not a ROS installation happens to be on the path. Stubbing only when the real
+packages are missing made the suite pass under plain pytest and fail under
+`colcon test`, where the real message types reject the plain objects the tests
+pass as waypoints.
 """
 
-import importlib
 import os
 import sys
 import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-
-def _missing(name):
-    try:
-        importlib.import_module(name)
-        return False
-    except Exception:
-        return True
 
 
 def _stub_rclpy():
@@ -81,9 +75,6 @@ def _stub_msgs():
         sys.modules[f"{pkg}.msg"] = msg
 
 
-if _missing("rclpy"):
-    _stub_rclpy()
-if _missing("moveit_msgs.srv"):
-    _stub_moveit()
-if _missing("sensor_msgs.msg"):
-    _stub_msgs()
+_stub_rclpy()
+_stub_moveit()
+_stub_msgs()
