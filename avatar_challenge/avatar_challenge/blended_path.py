@@ -60,6 +60,28 @@ class BlendedPathExecutor:
             )
         return result.solution, result.fraction
 
+    @staticmethod
+    def retime(trajectory, speed: float):
+        """Uniformly slow a trajectory to `speed` x its planned rate, in place.
+
+        GetCartesianPath has no velocity-scaling field in Humble, so scaling has
+        to happen after planning. Stretching every timestamp by the same factor
+        leaves the geometric path untouched and only changes how fast it is
+        traversed; velocities scale with 1/k and accelerations with 1/k^2 to stay
+        consistent with the new timing.
+        """
+        if speed >= 1.0:
+            return trajectory
+        k = 1.0 / speed
+        for point in trajectory.joint_trajectory.points:
+            total = point.time_from_start.sec + point.time_from_start.nanosec * 1e-9
+            scaled = total * k
+            point.time_from_start.sec = int(scaled)
+            point.time_from_start.nanosec = int(round((scaled % 1.0) * 1e9))
+            point.velocities = [v / k for v in point.velocities]
+            point.accelerations = [a / (k * k) for a in point.accelerations]
+        return trajectory
+
     def execute(self, trajectory, description: str):
         goal = ExecuteTrajectory.Goal()
         goal.trajectory = trajectory
@@ -74,20 +96,34 @@ class BlendedPathExecutor:
         rclpy.spin_until_future_complete(self._node, result_future, timeout_sec=self._timeout)
         outcome = result_future.result()
         if outcome is None:
-            raise RuntimeError(f"{description}: trajectory execution timed out")
+            # Letting this node exit does NOT stop the controller -- the arm would
+            # keep tracing after the process is gone. Ask the server to cancel and
+            # give it a bounded window to acknowledge before giving up.
+            self._node.get_logger().error(
+                f"{description}: execution result timed out; cancelling the goal"
+            )
+            cancel_future = handle.cancel_goal_async()
+            rclpy.spin_until_future_complete(self._node, cancel_future, timeout_sec=5.0)
+            if cancel_future.result() is None:
+                raise RuntimeError(
+                    f"{description}: execution timed out AND the cancel request was "
+                    f"not acknowledged -- the arm may still be moving"
+                )
+            raise RuntimeError(f"{description}: trajectory execution timed out (goal cancelled)")
         if outcome.result.error_code.val != 1:
             raise RuntimeError(
                 f"{description}: trajectory execution failed "
                 f"(MoveItErrorCode {outcome.result.error_code.val})"
             )
 
-    def plan_and_execute(self, poses, description: str):
+    def plan_and_execute(self, poses, description: str, speed: float = 1.0):
         trajectory, fraction = self.plan(poses, description)
+        self.retime(trajectory, speed)
         points = len(trajectory.joint_trajectory.points)
         duration = trajectory.joint_trajectory.points[-1].time_from_start
         self._node.get_logger().info(
             f"{description}: blended {len(poses)} waypoints into one trajectory "
-            f"({points} points, {duration.sec + duration.nanosec * 1e-9:.2f}s, "
-            f"{fraction * 100:.1f}% of path)"
+            f"({points} points, {duration.sec + duration.nanosec * 1e-9:.2f}s "
+            f"at {speed * 100:.0f}% speed, {fraction * 100:.1f}% of path)"
         )
         self.execute(trajectory, description)

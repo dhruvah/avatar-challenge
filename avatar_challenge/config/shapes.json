@@ -53,6 +53,7 @@
         }
       ],
       "closed": false,
+      "speed": 0.3,
       "start_pose": {
         "position": [0.320, -0.060, 0.350],
         "rpy": [0.0, 0.0, 0.0]

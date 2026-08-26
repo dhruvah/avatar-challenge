@@ -59,9 +59,6 @@ def generate_launch_description():
                 "blend": True,
                 "blend_max_step": 0.005,
                 "blend_min_fraction": 0.99,
-                "blend": True,
-                "blend_max_step": 0.005,
-                "blend_min_fraction": 0.99,
             }
         ],
     )

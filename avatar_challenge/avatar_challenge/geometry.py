@@ -198,6 +198,10 @@ def _tessellate_bspline(prev_xy, spec: dict, segments: int) -> List[Sequence[flo
 
 def flatten_vertices(vertices: Sequence[Union[Sequence[float], ArcSpec]], arc_segments: int) -> List[Sequence[float]]:
     """Expand a vertex list (points and/or arc specs) into a plain polyline of 2D points."""
+    # range(1, segments + 1) is empty for segments <= 0, which would silently
+    # drop every arc and spline instead of failing.
+    if not isinstance(arc_segments, int) or isinstance(arc_segments, bool) or arc_segments < 1:
+        raise ValueError(f"arc_segments must be an integer >= 1, got {arc_segments!r}")
     if not vertices:
         return []
     first = vertices[0]

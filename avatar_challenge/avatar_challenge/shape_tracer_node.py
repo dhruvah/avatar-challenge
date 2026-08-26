@@ -20,6 +20,10 @@ from avatar_challenge.geometry import build_shape_waypoints, Waypoint
 from avatar_challenge.shapes_io import load_shapes, ShapeDef
 
 
+class IKServiceError(RuntimeError):
+    """/compute_ik failed to answer -- distinct from a pose being unreachable."""
+
+
 def _to_pose_msg(position, quaternion) -> Pose:
     pose = Pose()
     pose.position.x, pose.position.y, pose.position.z = (float(v) for v in position)
@@ -37,7 +41,7 @@ class ShapeTracerNode(Node):
         self.declare_parameter("lift_height", 0.03)
         self.declare_parameter("arc_segments", 16)
         self.declare_parameter("closed", True)
-        self.declare_parameter("service_timeout_sec", 20.0)
+        self.declare_parameter("service_timeout_sec", 120.0)
         self.declare_parameter("blend", True)
         self.declare_parameter("blend_max_step", 0.005)
         self.declare_parameter("blend_min_fraction", 0.99)
@@ -147,6 +151,13 @@ class ShapeTracerNode(Node):
     # -- preflight reachability -------------------------------------------------
 
     def _is_reachable(self, waypoint: Waypoint) -> bool:
+        """True if IK solved. Raises IKServiceError if IK never answered.
+
+        A service that times out is a very different problem from a pose that is
+        genuinely out of reach, and conflating them sends debugging in the wrong
+        direction -- so an absent response raises rather than reporting the point
+        as unreachable.
+        """
         req = GetPositionIK.Request()
         req.ik_request.group_name = "xarm7"
         req.ik_request.ik_link_name = "link_eef"
@@ -161,7 +172,12 @@ class ShapeTracerNode(Node):
         future = self.ik_cli.call_async(req)
         rclpy.spin_until_future_complete(self, future, timeout_sec=self.service_timeout)
         result = future.result()
-        return result is not None and result.error_code.val == 1
+        if result is None:
+            raise IKServiceError(
+                "/compute_ik did not respond within "
+                f"{self.service_timeout}s -- is move_group running and healthy?"
+            )
+        return result.error_code.val == 1
 
     def check_reachable(self, shape: ShapeDef, waypoints):
         """Reject a shape whose waypoints have no IK solution, before moving.
@@ -209,7 +225,7 @@ class ShapeTracerNode(Node):
             # Everything after the approach -- descend, trace, lift -- goes out
             # as a single Cartesian path so the arm never stops at a vertex.
             poses = [_to_pose_msg(wp.position, wp.quaternion) for wp in waypoints[1:]]
-            self.blender.plan_and_execute(poses, f"{shape.name}:blended")
+            self.blender.plan_and_execute(poses, f"{shape.name}:blended", shape.speed)
             return
 
         for i, wp in enumerate(waypoints[1:], start=1):
@@ -260,7 +276,8 @@ def main(argv=None):
     node = None
     try:
         node = ShapeTracerNode()
-        # Give RViz a moment to subscribe before the first (latched-less) publish.
+        # The marker publisher is TRANSIENT_LOCAL, so a late RViz still gets the
+        # outlines; this pause just keeps the first frame from racing node startup.
         time.sleep(1.0)
         node.trace_all()
     except SystemExit:
