@@ -1,0 +1,1203 @@
+<title>Plane &amp; Pen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+/* ---------- tokens ----------
+   Deliberately single-theme: this is a drafting surface, and paper-white is
+   the point. Every colour is painted explicitly so the page holds its own
+   look regardless of the viewer's theme. */
+:root{
+  color-scheme:light;
+  --paper:#EDF0F2;
+  --surface:#F7F9FA;
+  --surface-2:#E3E8EB;
+  --ink:#111820;
+  --ink-2:#48555F;
+  --ink-3:#7C8A94;
+  --rule:#CBD4D9;
+  --rule-soft:#DDE4E8;
+  --pen:#0E7C8B;
+  --pen-bright:#12A0B4;
+  --pen-wash:rgba(14,124,139,.10);
+  --reach:#4F8A3D;
+  --noreach:#C0532B;
+  --noreach-wash:rgba(192,83,43,.13);
+  --shadow:rgba(17,24,32,.10);
+  --focus:#12A0B4;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace; font-variant-numeric:tabular-nums}
+.lab{
+  font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif;
+  text-transform:uppercase; letter-spacing:.09em; font-weight:600;
+  font-size:10.5px; color:var(--ink-3);
+}
+
+/* ---------- frame ---------- */
+.app{display:flex; flex-direction:column; height:100vh; min-height:600px}
+header{
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  padding:10px 16px; border-bottom:1px solid var(--rule); background:var(--surface);
+}
+.brand{display:flex; align-items:baseline; gap:10px; margin-right:auto}
+.brand h1{font-size:15px; font-weight:600; margin:0; letter-spacing:-.01em}
+.brand .sub{font-size:11.5px; color:var(--ink-3)}
+
+main{
+  flex:1; display:grid; grid-template-columns:64px minmax(0,1fr) 340px;
+  min-height:0;
+}
+.rail{
+  background:var(--surface); border-right:1px solid var(--rule);
+  display:flex; flex-direction:column; gap:2px; padding:10px 6px; overflow-y:auto;
+}
+.rail .lab{text-align:center; margin:8px 0 4px}
+.tool{
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:7px 2px; border:1px solid transparent; border-radius:5px;
+  background:none; color:var(--ink-2); cursor:pointer; font:inherit;
+}
+.tool svg{width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.6}
+.tool span{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:9.5px;
+  text-transform:uppercase; letter-spacing:.05em}
+.tool:hover{background:var(--surface-2); color:var(--ink)}
+.tool[aria-pressed="true"]{background:var(--pen-wash); border-color:var(--pen); color:var(--pen)}
+
+.stage{position:relative; min-width:0; background:var(--paper); overflow:hidden}
+#board{display:block; width:100%; height:100%; cursor:crosshair; touch-action:none}
+.stage.panning #board{cursor:grab}
+
+.side{
+  border-left:1px solid var(--rule); background:var(--surface);
+  overflow-y:auto; display:flex; flex-direction:column;
+}
+.panel{padding:12px 14px; border-bottom:1px solid var(--rule-soft)}
+.panel > .lab{display:block; margin-bottom:8px}
+
+/* ---------- controls ---------- */
+.row{display:flex; gap:6px; align-items:center}
+.row + .row{margin-top:6px}
+.grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:6px}
+.field{display:flex; flex-direction:column; gap:3px; min-width:0}
+.field .lab{font-size:9.5px}
+input[type=number],input[type=text],select{
+  width:100%; min-width:0; padding:5px 7px; border:1px solid var(--rule);
+  border-radius:4px; background:var(--paper); color:var(--ink);
+  font-family:"IBM Plex Mono",monospace; font-size:12px; font-variant-numeric:tabular-nums;
+}
+input[type=text]{font-family:"IBM Plex Sans",sans-serif}
+select{font-family:"IBM Plex Sans",sans-serif}
+input[type=range]{width:100%; accent-color:var(--pen)}
+.btn{
+  padding:6px 10px; border:1px solid var(--rule); border-radius:4px;
+  background:var(--paper); color:var(--ink); font:inherit; font-size:12.5px;
+  cursor:pointer; white-space:nowrap;
+}
+.btn:hover{border-color:var(--pen); color:var(--pen)}
+.btn.primary{background:var(--pen); border-color:var(--pen); color:#fff; font-weight:500}
+.btn.primary:hover{background:var(--pen-bright); border-color:var(--pen-bright); color:#fff}
+.btn.sm{padding:3px 7px; font-size:11.5px}
+.chips{display:flex; gap:4px; flex-wrap:wrap}
+.chip{
+  padding:4px 8px; border:1px solid var(--rule); border-radius:99px;
+  background:var(--paper); color:var(--ink-2); font-size:11.5px; cursor:pointer;
+  font-family:"IBM Plex Sans Condensed",sans-serif; text-transform:uppercase; letter-spacing:.05em;
+}
+.chip:hover{border-color:var(--pen); color:var(--pen)}
+.chip[aria-pressed="true"]{background:var(--pen-wash); border-color:var(--pen); color:var(--pen)}
+label.check{display:flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer}
+label.check input{accent-color:var(--pen)}
+
+/* ---------- shape list ---------- */
+.shapes{display:flex; flex-direction:column; gap:3px; max-height:150px; overflow-y:auto}
+.shp{
+  display:flex; align-items:center; gap:7px; padding:5px 7px; border-radius:4px;
+  border:1px solid transparent; cursor:pointer; font-size:12.5px;
+}
+.shp:hover{background:var(--surface-2)}
+.shp[aria-selected="true"]{background:var(--pen-wash); border-color:var(--pen)}
+.shp .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.shp .ct{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--ink-3)}
+.link{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-3);
+  font-family:"IBM Plex Mono",monospace}
+.link .dot{width:8px; height:8px}
+.btn[disabled]{opacity:.45; cursor:not-allowed}
+.btn[disabled]:hover{border-color:var(--rule); color:var(--ink)}
+.btn.primary[disabled]:hover{background:var(--pen); border-color:var(--pen); color:#fff}
+.shp .x{padding:0 5px; line-height:1.3; border-color:transparent; background:none; color:var(--ink-3)}
+.shp .x:hover{color:var(--noreach); border-color:var(--noreach)}
+.dot{width:7px; height:7px; border-radius:99px; flex:none}
+
+/* ---------- preview ---------- */
+#view3d{display:block; width:100%; height:210px; cursor:grab; touch-action:none;
+  border:1px solid var(--rule); border-radius:5px; background:var(--paper)}
+#view3d:active{cursor:grabbing}
+
+/* ---------- export ---------- */
+.out{
+  margin:0; padding:9px 10px; border:1px solid var(--rule); border-radius:5px;
+  background:var(--paper); font-family:"IBM Plex Mono",monospace; font-size:10.5px;
+  line-height:1.45; max-height:190px; overflow:auto; white-space:pre; color:var(--ink-2);
+}
+
+/* ---------- status ---------- */
+.status{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:6px 16px; border-top:1px solid var(--rule); background:var(--surface);
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3);
+  font-variant-numeric:tabular-nums;
+}
+.status b{color:var(--ink-2); font-weight:500}
+.status .sep{width:1px; height:12px; background:var(--rule)}
+.ok{color:var(--reach)} .bad{color:var(--noreach)}
+
+.hint{font-size:11.5px; color:var(--ink-3); line-height:1.45}
+.note{
+  font-size:11px; color:var(--ink-3); line-height:1.45;
+  border-left:2px solid var(--rule); padding-left:8px; margin-top:8px;
+}
+.toast{
+  position:fixed; left:50%; bottom:26px; transform:translateX(-50%);
+  background:var(--ink); color:var(--paper); padding:8px 15px; border-radius:5px;
+  font-size:12.5px; box-shadow:0 4px 14px var(--shadow); opacity:0; pointer-events:none;
+  transition:opacity .18s ease;
+}
+.toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+
+@media (max-width:1000px){
+  .app{height:auto}
+  main{grid-template-columns:56px minmax(0,1fr)}
+  .side{grid-column:1/-1; border-left:none; border-top:1px solid var(--rule)}
+  .stage{height:60vh; min-height:380px}
+}
+</style>
+
+<div class="app">
+  <header>
+    <div class="brand">
+      <h1>Plane &amp; Pen</h1>
+      <span class="sub">xArm 7 shape designer</span>
+    </div>
+    <div class="chips" role="group" aria-label="Canvas view">
+      <button class="chip" id="btnFit">Fit</button>
+      <button class="chip" id="btnReach" aria-pressed="true">Reach overlay</button>
+    </div>
+    <span class="link" id="robotState" title="Robot connection">
+      <span class="dot" id="robotDot"></span><span id="robotText">checking\u2026</span>
+    </span>
+    <button class="btn" id="btnImport">Import JSON</button>
+    <button class="btn primary" id="btnSend" disabled>Send to robot</button>
+    <button class="btn" id="btnCopy">Copy shapes.json</button>
+  </header>
+
+  <main>
+    <nav class="rail" aria-label="Tools">
+      <span class="lab">Draw</span>
+      <button class="tool" data-tool="select" aria-pressed="true" title="Select / edit vertices (V)">
+        <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.6L10.6 19z"/></svg><span>Select</span></button>
+      <button class="tool" data-tool="path" title="Path — click to add points, Enter to finish (P)">
+        <svg viewBox="0 0 24 24"><path d="M4 18l6-11 4 6 6-8"/><circle cx="4" cy="18" r="1.6"/><circle cx="20" cy="5" r="1.6"/></svg><span>Path</span></button>
+      <button class="tool" data-tool="rect" title="Rectangle (R)">
+        <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg><span>Rect</span></button>
+      <button class="tool" data-tool="circle" title="Circle — exports as arcs (C)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg><span>Circle</span></button>
+      <button class="tool" data-tool="poly" title="Polygon (G)">
+        <svg viewBox="0 0 24 24"><path d="M12 4l7 5-2.7 8.4H7.7L5 9z"/></svg><span>Poly</span></button>
+      <button class="tool" data-tool="star" title="Star (S)">
+        <svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.6 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.9l6-.8z"/></svg><span>Star</span></button>
+      <span class="lab">View</span>
+      <button class="tool" data-tool="pan" title="Pan (space-drag anywhere)">
+        <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg><span>Pan</span></button>
+    </nav>
+
+    <div class="stage" id="stage"><canvas id="board"></canvas></div>
+
+    <aside class="side">
+      <section class="panel">
+        <span class="lab">Shapes</span>
+        <div class="shapes" id="shapeList"></div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn sm" id="btnDup">Duplicate</button>
+          <button class="btn sm" id="btnDel">Delete</button>
+          <button class="btn sm" id="btnClear" style="margin-left:auto">Clear all</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <span class="lab">Plane placement</span>
+        <div class="grid3">
+          <div class="field"><span class="lab">X mm</span><input type="number" id="pX" step="5"></div>
+          <div class="field"><span class="lab">Y mm</span><input type="number" id="pY" step="5"></div>
+          <div class="field"><span class="lab">Z mm</span><input type="number" id="pZ" step="5"></div>
+        </div>
+        <div class="row" style="margin-top:10px; align-items:baseline">
+          <span class="lab">Orientation</span>
+          <div class="chips" id="modeSw" style="margin-left:auto">
+            <button class="chip" data-mode="simple" aria-pressed="true">Simple</button>
+            <button class="chip" data-mode="exact">Exact</button>
+          </div>
+        </div>
+        <div class="chips" id="presets" style="margin:7px 0">
+          <button class="chip" data-tilt="0">Table</button>
+          <button class="chip" data-tilt="90">Wall</button>
+          <button class="chip" data-tilt="45">Easel</button>
+        </div>
+
+        <div id="simpleBox">
+          <div class="field">
+            <span class="lab">Tilt &mdash; <span class="mono" id="tiltVal">0&deg;</span>
+              <span id="tiltWord" style="text-transform:none; letter-spacing:0"></span></span>
+            <input type="range" id="oTilt" min="0" max="180" step="1">
+          </div>
+          <div class="field" style="margin-top:7px">
+            <span class="lab">Facing &mdash; <span class="mono" id="faceVal">0&deg;</span></span>
+            <input type="range" id="oFace" min="-180" max="180" step="1">
+          </div>
+          <div class="field" style="margin-top:7px">
+            <span class="lab">Spin on the surface &mdash; <span class="mono" id="spinVal">0&deg;</span></span>
+            <input type="range" id="oSpin" min="-180" max="180" step="1">
+          </div>
+        </div>
+
+        <div id="exactBox" style="display:none">
+          <div class="grid3">
+            <div class="field"><span class="lab">Roll&deg;</span><input type="number" id="pR" step="5"></div>
+            <div class="field"><span class="lab">Pitch&deg;</span><input type="number" id="pP" step="5"></div>
+            <div class="field"><span class="lab">Yaw&deg;</span><input type="number" id="pYaw" step="5"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <span class="lab">Preview</span>
+        <canvas id="view3d"></canvas>
+        <p class="hint" style="margin:7px 0 0">Drag to orbit. Faint wireframe is the measured reach envelope; red vertices sit outside it.</p>
+      </section>
+
+      <section class="panel">
+        <span class="lab">Shape options</span>
+        <div class="field" style="margin-bottom:7px">
+          <span class="lab">Name</span><input type="text" id="sName">
+        </div>
+        <div class="row" style="gap:14px">
+          <label class="check"><input type="checkbox" id="sClosed"> Closed</label>
+          <label class="check"><input type="checkbox" id="sSmooth"> Smooth (B&#8209;spline)</label>
+        </div>
+        <div class="field" style="margin-top:9px">
+          <span class="lab">Trace speed &mdash; <span class="mono" id="spdVal">50%</span></span>
+          <input type="range" id="sSpeed" min="5" max="100" step="5">
+        </div>
+        <div id="vtxBox" style="margin-top:10px; display:none">
+          <span class="lab">Selected vertex</span>
+          <div class="row" style="margin-top:5px">
+            <select id="vKind" style="flex:1">
+              <option value="line">Straight edge</option>
+              <option value="arc">Arc</option>
+            </select>
+            <button class="btn sm" id="vDel">Remove</button>
+          </div>
+          <div class="field" id="bulgeBox" style="margin-top:7px; display:none">
+            <span class="lab">Arc bulge &mdash; <span class="mono" id="bVal">20 mm</span></span>
+            <input type="range" id="vBulge" min="-120" max="120" step="2">
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <span class="lab">Export</span>
+        <pre class="out mono" id="jsonOut"></pre>
+        <p class="note">Drops straight into <span class="mono">avatar_challenge/config/shapes.json</span>. Millimetres and degrees here; metres and radians on the wire.</p>
+      </section>
+    </aside>
+  </main>
+
+  <div class="status">
+    <span>cursor <b id="stCur">&mdash;</b></span><span class="sep"></span>
+    <span>world <b id="stWorld">&mdash;</b></span><span class="sep"></span>
+    <span id="stReach">&mdash;</span><span class="sep"></span>
+    <span>scale <b id="stZoom">&mdash;</b></span>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   Reach envelope — measured in the challenge container by
+   sweeping /compute_ik over the (radius, z) half-plane with the
+   tool held pointing down. Joint 1 rotates about base Z, so the
+   reachable set is ~a surface of revolution.
+   ============================================================ */
+const ENV = {"r_step":0.04,"z_step":0.04,
+ "radii":[0,.04,.08,.12,.16,.2,.24,.28,.32,.36,.4,.44,.48,.52,.56,.6,.64,.68,.72,.76,.8],
+ "zs":[0,.04,.08,.12,.16,.2,.24,.28,.32,.36,.4,.44,.48,.52,.56,.6,.64,.68,.72,.76,.8,.84,.88],
+ "grid":["000111111111111111000","000111111111111111000","000111111111111111000",
+ "000111111111111111100","000111111111111111100","000111111111111111100",
+ "000111111111111111100","000111111111111111000","011111111111111111000",
+ "111111111111111111000","111111111111111111000","111111111111111110000",
+ "111111111111111110000","111111111111111100000","111111111111111000000",
+ "111111111111111000000","111111111111110000000","111111111111000000000",
+ "111111111110000000000","111111111000000000000","111111000000000000000",
+ "000000000000000000000","000000000000000000000"]};
+
+/** Reachable at cylindrical radius r, height z (metres). */
+function reachable(r, z){
+  const zi = Math.round(z / ENV.z_step), ri = Math.round(r / ENV.r_step);
+  if (zi < 0 || zi >= ENV.grid.length || ri < 0 || ri >= ENV.radii.length) return false;
+  return ENV.grid[zi][ri] === "1";
+}
+/** Inner/outer reachable radius at height z — for drawing the envelope. */
+function envSpan(zi){
+  const row = ENV.grid[zi]; const lo = row.indexOf("1");
+  if (lo < 0) return null;
+  return [ENV.radii[lo], ENV.radii[row.lastIndexOf("1")]];
+}
+
+/* ============================================================
+   Pose maths — mirrors geometry.py so the preview cannot drift
+   from what the robot actually traces.
+   ============================================================ */
+const D2R = Math.PI/180;
+function rotMatrix(rollD, pitchD, yawD){
+  const r=rollD*D2R, p=pitchD*D2R, y=yawD*D2R;
+  const cr=Math.cos(r),sr=Math.sin(r),cp=Math.cos(p),sp=Math.sin(p),cy=Math.cos(y),sy=Math.sin(y);
+  // Rz(yaw) * Ry(pitch) * Rx(roll)  — REP-103 / tf2 setRPY
+  return [
+    [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
+    [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],
+    [-sp,   cp*sr,            cp*cr           ]
+  ];
+}
+/** Extract REP-103 roll/pitch/yaw (degrees) back out of a rotation matrix. */
+function matrixToRpy(R){
+  const sp = Math.max(-1, Math.min(1, -R[2][0]));
+  const pitch = Math.asin(sp);
+  let roll, yaw;
+  if (Math.abs(R[2][0]) > 0.999999){          // gimbal lock: roll and yaw merge
+    roll = 0;
+    yaw  = Math.atan2(-R[0][1], R[1][1]);
+  } else {
+    roll = Math.atan2(R[2][1], R[2][2]);
+    yaw  = Math.atan2(R[1][0], R[0][0]);
+  }
+  return [roll/D2R, pitch/D2R, yaw/D2R];
+}
+/** Tilt/facing/spin -> rpy. The plane starts flat (normal +Z); `tilt` leans it
+    over, `facing` swings which way it leans, `spin` turns the drawing on the
+    surface. Composed as Rz(facing)*Rx(tilt)*Rz(spin). */
+function tfsToRpy(tilt, facing, spin){
+  const Rz=a=>{const c=Math.cos(a*D2R),s=Math.sin(a*D2R);return [[c,-s,0],[s,c,0],[0,0,1]];};
+  const Rx=a=>{const c=Math.cos(a*D2R),s=Math.sin(a*D2R);return [[1,0,0],[0,c,-s],[0,s,c]];};
+  const mul=(A,B)=>A.map((r,i)=>B[0].map((_,j)=>r.reduce((t,v,k)=>t+A[i][k]*B[k][j],0)));
+  return matrixToRpy(mul(mul(Rz(facing), Rx(tilt)), Rz(spin)));
+}
+/** Inverse: recover tilt/facing/spin from an arbitrary rpy. */
+function rpyToTfs(roll, pitch, yaw){
+  const R=rotMatrix(roll,pitch,yaw);
+  const n=[R[0][2],R[1][2],R[2][2]];                       // plane normal
+  const tilt=Math.acos(Math.max(-1,Math.min(1,n[2])))/D2R;
+  let facing = (Math.abs(tilt)<1e-6 || Math.abs(tilt-180)<1e-6) ? 0
+             : Math.atan2(n[0], -n[1])/D2R;
+  // strip tilt+facing back off to leave the in-plane spin
+  const Rz=a=>{const c=Math.cos(a*D2R),s=Math.sin(a*D2R);return [[c,-s,0],[s,c,0],[0,0,1]];};
+  const Rx=a=>{const c=Math.cos(a*D2R),s=Math.sin(a*D2R);return [[1,0,0],[0,c,-s],[0,s,c]];};
+  const mul=(A,B)=>A.map((r,i)=>B[0].map((_,j)=>r.reduce((t,v,k)=>t+A[i][k]*B[k][j],0)));
+  const base=mul(Rz(facing),Rx(tilt));
+  const M=mul(base[0].map((_,i)=>base.map(r=>r[i])), R);    // base^T * R
+  return [tilt, facing, Math.atan2(M[1][0], M[0][0])/D2R];
+}
+function tiltWord(t){
+  if(t<8) return "flat, like a table";
+  if(t<75) return "leaning back";
+  if(t<105) return "upright, like a wall";
+  if(t<172) return "overhanging";
+  return "facing down";
+}
+
+/** Local planar mm -> world metres. */
+function toWorld(mx, my, pose){
+  const R = rotMatrix(pose.roll, pose.pitch, pose.yaw);
+  const lx = mx/1000, ly = my/1000;
+  return [
+    pose.x/1000 + R[0][0]*lx + R[0][1]*ly,
+    pose.y/1000 + R[1][0]*lx + R[1][1]*ly,
+    pose.z/1000 + R[2][0]*lx + R[2][1]*ly
+  ];
+}
+function worldReachable(w){ return reachable(Math.hypot(w[0], w[1]), w[2]); }
+
+/* ============================================================
+   Model
+   ============================================================ */
+let shapes = [], selId = null, selVtx = -1, tool = "select";
+let showReach = true;
+const cam = {az:-0.6, el:0.42};
+let uid = 1;
+
+function newShape(name, verts, pose, opts){
+  return Object.assign({
+    id: uid++, name, verts, closed:true, smooth:false, speed:50, oMode:"simple",
+    tilt:0, facing:0, spin:0,
+    pose: Object.assign({x:300,y:-50,z:250,roll:0,pitch:0,yaw:0}, pose||{})
+  }, opts||{});
+}
+const sel = () => shapes.find(s => s.id === selId) || null;
+
+/* seed: the challenge PDF's square, placed where the arm can actually reach */
+shapes.push(newShape("square_45deg",
+  [{x:0,y:0,kind:"line"},{x:0,y:100,kind:"line"},{x:100,y:100,kind:"line"},{x:100,y:0,kind:"line"}],
+  {x:300,y:-50,z:250,yaw:45}));
+selId = shapes[0].id;
+
+/* ============================================================
+   Canvas / viewport
+   ============================================================ */
+const stage=document.getElementById("stage"), board=document.getElementById("board");
+const ctx=board.getContext("2d");
+const view={ox:0, oy:0, scale:1.6};   // px per mm
+let dpr=1;
+
+function resize(){
+  dpr = window.devicePixelRatio || 1;
+  const r = stage.getBoundingClientRect();
+  board.width = Math.max(1, Math.round(r.width*dpr));
+  board.height= Math.max(1, Math.round(r.height*dpr));
+  const v=document.getElementById("view3d"), vr=v.getBoundingClientRect();
+  v.width=Math.max(1,Math.round(vr.width*dpr)); v.height=Math.max(1,Math.round(vr.height*dpr));
+  draw();
+}
+const S = () => ({w: board.width/dpr, h: board.height/dpr});
+const mm2px = (mx,my) => [S().w/2 + view.ox + mx*view.scale, S().h/2 + view.oy - my*view.scale];
+const px2mm = (px,py) => [(px - S().w/2 - view.ox)/view.scale, -(py - S().h/2 - view.oy)/view.scale];
+
+function fit(){
+  const s = sel();
+  if (!s || !s.verts.length){ view.ox=0; view.oy=0; view.scale=1.6; return draw(); }
+  const pts = flatten(s);
+  let minx=1e9,maxx=-1e9,miny=1e9,maxy=-1e9;
+  for (const p of pts){ minx=Math.min(minx,p[0]); maxx=Math.max(maxx,p[0]);
+                        miny=Math.min(miny,p[1]); maxy=Math.max(maxy,p[1]); }
+  const {w,h}=S(), pad=70;
+  view.scale = Math.min((w-pad*2)/Math.max(20,maxx-minx), (h-pad*2)/Math.max(20,maxy-miny), 6);
+  view.ox = -((minx+maxx)/2)*view.scale;
+  view.oy =  ((miny+maxy)/2)*view.scale;
+  draw();
+}
+
+/* ============================================================
+   Geometry — arc + spline tessellation, kept in step with
+   geometry.py's clamped-knot De Boor implementation.
+   ============================================================ */
+function arcPoints(from, v, segs){
+  const cx=v.cx, cy=v.cy;
+  const r = Math.hypot(from[0]-cx, from[1]-cy);
+  let a0 = Math.atan2(from[1]-cy, from[0]-cx);
+  let a1 = Math.atan2(v.y-cy, v.x-cx);
+  let d = a1-a0;
+  if (v.cw){ while(d>0) d-=2*Math.PI; } else { while(d<0) d+=2*Math.PI; }
+  const out=[];
+  for (let i=1;i<=segs;i++){ const a=a0+d*(i/segs); out.push([cx+r*Math.cos(a), cy+r*Math.sin(a)]); }
+  return out;
+}
+function deBoor(t, deg, knots, ctrlPts){
+  const n = ctrlPts.length-1;
+  let span;
+  if (t >= knots[n+1]) span = n;
+  else { span = deg; while (span < n && knots[span+1] <= t) span++; }
+  const d=[];
+  for (let j=0;j<=deg;j++) d.push(ctrlPts[span-deg+j].slice());
+  for (let r=1;r<=deg;r++)
+    for (let j=deg;j>=r;j--){
+      const i=span-deg+j, den=knots[i+deg-r+1]-knots[i];
+      const a = den<1e-12 ? 0 : (t-knots[i])/den;
+      d[j]=[(1-a)*d[j-1][0]+a*d[j][0], (1-a)*d[j-1][1]+a*d[j][1]];
+    }
+  return d[deg];
+}
+function splineThrough(ctrlPts, deg, segs){
+  const n=ctrlPts.length-1, inner=n-deg, knots=[];
+  for(let i=0;i<=deg;i++) knots.push(0);
+  for(let i=1;i<=inner;i++) knots.push(i/(inner+1));
+  for(let i=0;i<=deg;i++) knots.push(1);
+  const out=[];
+  for(let i=1;i<=segs;i++) out.push(deBoor(i/segs, deg, knots, ctrlPts));
+  return out;
+}
+/** Shape -> flat polyline of [x,y] mm. */
+function flatten(s, segs){
+  segs = segs || 24;
+  if (!s.verts.length) return [];
+  const base = s.verts.map(v => [v.x, v.y]);
+  if (s.smooth && base.length >= 4){
+    const cp = base.slice();
+    if (s.closed) cp.push(base[0].slice());
+    return [base[0]].concat(splineThrough(cp, 3, segs*Math.max(2,cp.length)));
+  }
+  const out=[base[0]];
+  for (let i=1;i<s.verts.length;i++){
+    const v=s.verts[i];
+    if (v.kind==="arc") out.push(...arcPoints(out[out.length-1], v, segs));
+    else out.push([v.x, v.y]);
+  }
+  if (s.closed && (out[0][0]!==out[out.length-1][0] || out[0][1]!==out[out.length-1][1]))
+    out.push(base[0].slice());
+  return out;
+}
+/** Arc through A->B bulging by sagitta s (mm). Returns {cx,cy,cw}. */
+function bulgeToArc(A, B, sag){
+  const dx=B[0]-A[0], dy=B[1]-A[1], c=Math.hypot(dx,dy);
+  if (c<1e-6 || Math.abs(sag)<0.5) return null;
+  const R=(sag*sag + c*c/4)/(2*Math.abs(sag));
+  const mx=(A[0]+B[0])/2, my=(A[1]+B[1])/2;
+  const nx=-dy/c, ny=dx/c;                    // left normal
+  const sgn=Math.sign(sag), d=R-Math.abs(sag);
+  return {cx:mx - nx*d*sgn, cy:my - ny*d*sgn, cw: sgn>0};
+}
+function vtxBulge(s, i){
+  const v=s.verts[i];
+  if (v.kind!=="arc") return 0;
+  const A=[s.verts[i-1].x, s.verts[i-1].y], B=[v.x,v.y];
+  const c=Math.hypot(B[0]-A[0],B[1]-A[1]);
+  const R=Math.hypot(A[0]-v.cx, A[1]-v.cy);
+  const d=Math.sqrt(Math.max(0,R*R-c*c/4));
+  const sag=R-d;
+  return (v.cw?1:-1)*sag;
+}
+
+/* ============================================================
+   Drawing the board
+   ============================================================ */
+function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+function draw(){
+  const {w,h}=S();
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle=css("--paper"); ctx.fillRect(0,0,w,h);
+  if (showReach) drawReachWash(w,h);
+  drawGrid(w,h);
+  for (const s of shapes) drawShape(s, s.id===selId);
+  drawPending();
+  document.getElementById("stZoom").textContent = view.scale.toFixed(2)+" px/mm";
+  draw3d();
+}
+
+/* the centrepiece: shade canvas regions that map outside the envelope */
+function drawReachWash(w,h){
+  const s=sel(); if(!s) return;
+  const cell=9;
+  ctx.fillStyle=css("--noreach-wash");
+  for(let py=0; py<h; py+=cell){
+    for(let px=0; px<w; px+=cell){
+      const [mx,my]=px2mm(px+cell/2, py+cell/2);
+      if(!worldReachable(toWorld(mx,my,s.pose))) ctx.fillRect(px,py,cell,cell);
+    }
+  }
+}
+
+function drawGrid(w,h){
+  const step=10; // mm
+  let sp=step*view.scale;
+  let mult=1; while(sp<7){ mult*=5; sp=step*mult*view.scale; }
+  const o=mm2px(0,0);
+  ctx.lineWidth=1;
+  ctx.strokeStyle=css("--rule-soft");
+  ctx.beginPath();
+  for(let x=o[0]%sp; x<w; x+=sp){ ctx.moveTo(Math.round(x)+.5,0); ctx.lineTo(Math.round(x)+.5,h); }
+  for(let y=o[1]%sp; y<h; y+=sp){ ctx.moveTo(0,Math.round(y)+.5); ctx.lineTo(w,Math.round(y)+.5); }
+  ctx.stroke();
+  // origin cross — where the shape's first vertex anchors
+  ctx.strokeStyle=css("--rule"); ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(o[0]-11,o[1]); ctx.lineTo(o[0]+11,o[1]);
+  ctx.moveTo(o[0],o[1]-11); ctx.lineTo(o[0],o[1]+11); ctx.stroke();
+}
+
+function drawShape(s, isSel){
+  const pts=flatten(s);
+  if(pts.length<2 && s.verts.length<2){ drawVerts(s,isSel); return; }
+  ctx.lineJoin="round"; ctx.lineCap="round";
+  ctx.strokeStyle = isSel ? css("--pen") : css("--ink-3");
+  ctx.lineWidth = isSel ? 2.1 : 1.4;
+  ctx.beginPath();
+  pts.forEach((p,i)=>{ const q=mm2px(p[0],p[1]); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+  ctx.stroke();
+  if(isSel) drawVerts(s,true);
+}
+
+function drawVerts(s, isSel){
+  if(!isSel) return;
+  s.verts.forEach((v,i)=>{
+    const q=mm2px(v.x,v.y);
+    const ok=worldReachable(toWorld(v.x,v.y,s.pose));
+    ctx.beginPath(); ctx.arc(q[0],q[1], i===selVtx?5.5:4, 0, 7);
+    ctx.fillStyle = ok ? css("--surface") : css("--noreach");
+    ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle = ok ? css("--pen") : css("--noreach"); ctx.stroke();
+    if(i===0){ ctx.beginPath(); ctx.arc(q[0],q[1],8.5,0,7);
+      ctx.lineWidth=1.2; ctx.strokeStyle=css("--pen"); ctx.stroke(); }
+  });
+}
+
+let pending=null; // in-progress path
+function drawPending(){
+  if(!pending||!pending.pts.length) return;
+  ctx.strokeStyle=css("--pen"); ctx.lineWidth=1.6; ctx.setLineDash([5,4]);
+  ctx.beginPath();
+  pending.pts.forEach((p,i)=>{ const q=mm2px(p[0],p[1]); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+  if(pending.cur){ const q=mm2px(pending.cur[0],pending.cur[1]); ctx.lineTo(q[0],q[1]); }
+  ctx.stroke(); ctx.setLineDash([]);
+  pending.pts.forEach(p=>{ const q=mm2px(p[0],p[1]);
+    ctx.beginPath(); ctx.arc(q[0],q[1],3.5,0,7);
+    ctx.fillStyle=css("--surface"); ctx.fill();
+    ctx.lineWidth=1.8; ctx.strokeStyle=css("--pen"); ctx.stroke(); });
+}
+
+/* ============================================================
+   3D preview
+   ============================================================ */
+function project(p, W, H, sc){
+  const ca=Math.cos(cam.az), sa=Math.sin(cam.az), ce=Math.cos(cam.el), se=Math.sin(cam.el);
+  const xr = p[0]*ca + p[1]*sa, yr = -p[0]*sa + p[1]*ca;
+  return [W/2 + yr*sc, H/2 + 40 - (p[2]*ce - xr*se)*sc];
+}
+function draw3d(){
+  const v=document.getElementById("view3d"), c=v.getContext("2d");
+  const W=v.width/dpr, H=v.height/dpr, sc=Math.min(W,H)/1.75;
+  c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H);
+  c.fillStyle=css("--paper"); c.fillRect(0,0,W,H);
+  const P=p=>project(p,W,H,sc);
+
+  // ground rings
+  c.strokeStyle=css("--rule-soft"); c.lineWidth=1;
+  for(const r of [0.2,0.4,0.6,0.8]){
+    c.beginPath();
+    for(let i=0;i<=48;i++){ const a=i/48*2*Math.PI, q=P([r*Math.cos(a), r*Math.sin(a), 0]);
+      i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); }
+    c.stroke();
+  }
+  // envelope wireframe (surface of revolution from the measured sweep)
+  c.strokeStyle=css("--rule"); c.lineWidth=1;
+  const prof=[];
+  for(let zi=0; zi<ENV.grid.length; zi++){ const sp=envSpan(zi); if(sp) prof.push([sp[1], ENV.zs[zi]]); }
+  for(let k=0;k<8;k++){
+    const a=k/8*2*Math.PI;
+    c.beginPath();
+    prof.forEach((pr,i)=>{ const q=P([pr[0]*Math.cos(a), pr[0]*Math.sin(a), pr[1]]);
+      i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); });
+    c.stroke();
+  }
+  for(let zi=0; zi<ENV.grid.length; zi+=4){
+    const sp=envSpan(zi); if(!sp) continue;
+    c.beginPath();
+    for(let i=0;i<=40;i++){ const a=i/40*2*Math.PI, q=P([sp[1]*Math.cos(a), sp[1]*Math.sin(a), ENV.zs[zi]]);
+      i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); }
+    c.stroke();
+  }
+  // base column
+  c.strokeStyle=css("--ink-3"); c.lineWidth=1.5;
+  const b0=P([0,0,0]), b1=P([0,0,0.126]);
+  c.beginPath(); c.moveTo(b0[0],b0[1]); c.lineTo(b1[0],b1[1]); c.stroke();
+
+  const s=sel(); if(!s) return;
+  const pts=flatten(s).map(p=>toWorld(p[0],p[1],s.pose));
+  // plane patch
+  let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
+  flatten(s).forEach(p=>{ mnx=Math.min(mnx,p[0]);mxx=Math.max(mxx,p[0]);
+                          mny=Math.min(mny,p[1]);mxy=Math.max(mxy,p[1]); });
+  const pad=18;
+  const corners=[[mnx-pad,mny-pad],[mxx+pad,mny-pad],[mxx+pad,mxy+pad],[mnx-pad,mxy+pad]]
+    .map(p=>toWorld(p[0],p[1],s.pose));
+  c.fillStyle=css("--pen-wash"); c.strokeStyle=css("--pen"); c.lineWidth=1;
+  c.beginPath(); corners.forEach((p,i)=>{ const q=P(p); i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); });
+  c.closePath(); c.fill(); c.stroke();
+  // outline
+  c.strokeStyle=css("--pen"); c.lineWidth=2;
+  c.beginPath(); pts.forEach((p,i)=>{ const q=P(p); i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); });
+  c.stroke();
+  // vertices, coloured by reachability
+  s.verts.forEach(v=>{
+    const w=toWorld(v.x,v.y,s.pose), q=P(w), ok=worldReachable(w);
+    c.beginPath(); c.arc(q[0],q[1],3.4,0,7);
+    c.fillStyle = ok ? css("--reach") : css("--noreach"); c.fill();
+  });
+}
+
+/* ============================================================
+   Export
+   ============================================================ */
+const r6 = n => Math.round(n*1e6)/1e6;
+function buildJSON(){
+  const out={shapes:[]};
+  for(const s of shapes){
+    if(s.verts.length<2) continue;
+    const o=s.verts[0], R=rotMatrix(s.pose.roll,s.pose.pitch,s.pose.yaw);
+    // first vertex must be (0,0), so fold its offset into the start pose
+    const pos=[
+      r6(s.pose.x/1000 + R[0][0]*o.x/1000 + R[0][1]*o.y/1000),
+      r6(s.pose.y/1000 + R[1][0]*o.x/1000 + R[1][1]*o.y/1000),
+      r6(s.pose.z/1000 + R[2][0]*o.x/1000 + R[2][1]*o.y/1000)
+    ];
+    const rel=(x,y)=>[r6((x-o.x)/1000), r6((y-o.y)/1000)];
+    let verts;
+    if(s.smooth && s.verts.length>=4){
+      const cp=s.verts.slice(1).map(v=>rel(v.x,v.y));
+      if(s.closed) cp.push([0,0]);
+      verts=[[0.0,0.0],{control_points:cp, degree:3}];
+    } else {
+      verts=[[0.0,0.0]];
+      for(let i=1;i<s.verts.length;i++){
+        const v=s.verts[i];
+        if(v.kind==="arc") verts.push({arc_center:rel(v.cx,v.cy), arc_end:rel(v.x,v.y), clockwise:!!v.cw});
+        else verts.push(rel(v.x,v.y));
+      }
+    }
+    out.shapes.push({
+      name:s.name, vertices:verts, closed:!!s.closed,
+      start_pose:{position:pos, rpy:[r6(s.pose.roll*D2R), r6(s.pose.pitch*D2R), r6(s.pose.yaw*D2R)]},
+      speed:s.speed/100
+    });
+  }
+  return JSON.stringify(out,null,2);
+}
+
+/** Load a shapes.json back into the editor (inverse of buildJSON). */
+function importJSON(text){
+  const data=JSON.parse(text);
+  if(!data || !Array.isArray(data.shapes)) throw new Error("no 'shapes' array");
+  const loaded=[], lossy=[];
+  for(const sh of data.shapes){
+    const P=sh.start_pose.position, rpy=sh.start_pose.rpy||[0,0,0];
+    const pose={x:P[0]*1000, y:P[1]*1000, z:P[2]*1000,
+                roll:rpy[0]/D2R, pitch:rpy[1]/D2R, yaw:rpy[2]/D2R, oMode:"simple"};
+    const [t,f,sp]=rpyToTfs(pose.roll,pose.pitch,pose.yaw);
+    pose.tilt=Math.round(t); pose.facing=Math.round(f); pose.spin=Math.round(sp);
+    const verts=[{x:0,y:0,kind:"line"}]; let smooth=false, splineCount=0;
+    for(const v of sh.vertices.slice(1)){
+      if(Array.isArray(v)) verts.push({x:v[0]*1000, y:v[1]*1000, kind:"line"});
+      else if(v.control_points){
+        smooth=true; splineCount++;
+        for(const c of v.control_points) verts.push({x:c[0]*1000, y:c[1]*1000, kind:"line"});
+        const last=verts[verts.length-1];
+        // a closed smooth shape ends on its own start point; that is a control
+        // point, not a vertex the user placed
+        if(verts.length>1 && Math.hypot(last.x,last.y)<1e-6) verts.pop();
+      } else {
+        verts.push({x:v.arc_end[0]*1000, y:v.arc_end[1]*1000, kind:"arc",
+                    cx:v.arc_center[0]*1000, cy:v.arc_center[1]*1000, cw:!!v.clockwise});
+      }
+    }
+    if(splineCount>1) lossy.push(sh.name||"(unnamed)");
+    const s=newShape(sh.name||("shape_"+uid), verts, pose);
+    s.closed = sh.closed!==false; s.smooth=smooth;
+    s.speed = Math.round((sh.speed!==undefined?sh.speed:1)*100);
+    loaded.push(s);
+  }
+  if(!loaded.length) throw new Error("no shapes found");
+  shapes=loaded; selId=shapes[0].id; selVtx=-1;
+  syncPanel(); fit(); draw();
+  // The editor carries one 'smooth' flag per shape, so a shape built from
+  // several separate B-spline runs cannot be represented exactly -- it becomes
+  // a single spline through all the control points, which is a different curve.
+  if(lossy.length) return {warning:
+    `${lossy.join(", ")}: multiple B-spline segments were merged into one, so the curve changed`};
+  return {};
+}
+
+
+/* ============================================================
+   UI wiring
+   ============================================================ */
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("on");
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("on"),1700);
+}
+function syncPanel(){
+  const s=sel();
+  document.getElementById("jsonOut").textContent = buildJSON();
+  // shape list
+  const list=document.getElementById("shapeList"); list.innerHTML="";
+  shapes.forEach(sh=>{
+    const bad = sh.verts.some(v=>!worldReachable(toWorld(v.x,v.y,sh.pose)));
+    const el=document.createElement("div");
+    el.className="shp"; el.setAttribute("aria-selected", sh.id===selId);
+    el.innerHTML=`<span class="dot" style="background:${bad?"var(--noreach)":"var(--reach)"}"></span>
+      <span class="nm">${sh.name.replace(/[<>&]/g,"")}</span><span class="ct">${sh.verts.length}</span>
+      <button class="btn sm x" title="Delete this shape" aria-label="Delete ${sh.name.replace(/[<>&"]/g,"")}">&times;</button>`;
+    el.onclick=()=>{ selId=sh.id; selVtx=-1; syncPanel(); draw(); };
+    el.querySelector(".x").onclick=ev=>{ ev.stopPropagation(); deleteShape(sh.id); };
+    list.appendChild(el);
+  });
+  if(!s) return;
+  const set=(id,val)=>{ const e=document.getElementById(id); if(document.activeElement!==e) e.value=val; };
+  set("pX",s.pose.x); set("pY",s.pose.y); set("pZ",s.pose.z);
+  set("pR",s.pose.roll); set("pP",s.pose.pitch); set("pYaw",s.pose.yaw);
+  set("sName",s.name);
+  document.getElementById("sClosed").checked=s.closed;
+  document.getElementById("sSmooth").checked=s.smooth;
+  document.getElementById("sSpeed").value=s.speed;
+  document.getElementById("spdVal").textContent=s.speed+"%";
+  const simple = s.pose.oMode==="simple";
+  document.getElementById("simpleBox").style.display = simple?"block":"none";
+  document.getElementById("exactBox").style.display  = simple?"none":"block";
+  document.querySelectorAll("#modeSw .chip").forEach(c=>
+    c.setAttribute("aria-pressed", (c.dataset.mode==="simple")===simple));
+  document.querySelectorAll("#presets .chip").forEach(c=>
+    c.setAttribute("aria-pressed", simple && Math.round(s.pose.tilt)===+c.dataset.tilt));
+  set("oTilt",s.pose.tilt); set("oFace",s.pose.facing); set("oSpin",s.pose.spin);
+  document.getElementById("tiltVal").textContent=Math.round(s.pose.tilt)+"\u00B0";
+  document.getElementById("faceVal").textContent=Math.round(s.pose.facing)+"\u00B0";
+  document.getElementById("spinVal").textContent=Math.round(s.pose.spin)+"\u00B0";
+  document.getElementById("tiltWord").textContent=" \u00B7 "+tiltWord(s.pose.tilt);
+  // vertex box
+  const vb=document.getElementById("vtxBox");
+  if(selVtx>0 && selVtx<s.verts.length && !s.smooth){
+    vb.style.display="block";
+    const v=s.verts[selVtx];
+    document.getElementById("vKind").value=v.kind;
+    const bb=document.getElementById("bulgeBox");
+    bb.style.display = v.kind==="arc" ? "block" : "none";
+    if(v.kind==="arc"){
+      const b=Math.round(vtxBulge(s,selVtx));
+      document.getElementById("vBulge").value=Math.max(-120,Math.min(120,b));
+      document.getElementById("bVal").textContent=b+" mm";
+    }
+  } else vb.style.display="none";
+}
+
+/* --- tools --- */
+document.querySelectorAll(".tool").forEach(b=>{
+  b.onclick=()=>{
+    tool=b.dataset.tool; pending=null;
+    document.querySelectorAll(".tool").forEach(x=>x.setAttribute("aria-pressed", x===b));
+    stage.classList.toggle("panning", tool==="pan");
+    draw();
+  };
+});
+addEventListener("keydown", e=>{
+  if(/input|select|textarea/i.test(e.target.tagName)) return;
+  const map={v:"select",p:"path",r:"rect",c:"circle",g:"poly",s:"star"};
+  if(map[e.key.toLowerCase()]){
+    const b=document.querySelector(`.tool[data-tool="${map[e.key.toLowerCase()]}"]`); b&&b.click();
+  }
+  if(e.key==="Enter"&&pending) finishPath();
+  if(e.key==="Escape"){ pending=null; selVtx=-1; syncPanel(); draw(); }
+  if(e.key==="Backspace"||e.key==="Delete"){
+    if(selVtx>0) removeVertex(); else deleteShape();
+    e.preventDefault();
+  }
+});
+
+/* --- pointer --- */
+let drag=null;
+function evPos(e){
+  const r=board.getBoundingClientRect();
+  return [e.clientX-r.left, e.clientY-r.top];
+}
+/** Topmost shape whose outline passes near (mx,my), selected shape first. */
+function shapeAt(mx,my){
+  const tol=11/view.scale;
+  const order=[...shapes].sort((a,b)=>(b.id===selId)-(a.id===selId));
+  for(const sh of order){
+    const pts=flatten(sh);
+    for(let i=1;i<pts.length;i++){
+      const [ax,ay]=pts[i-1], [bx,by]=pts[i];
+      const dx=bx-ax, dy=by-ay, L=dx*dx+dy*dy;
+      const t=L<1e-12?0:Math.max(0,Math.min(1,((mx-ax)*dx+(my-ay)*dy)/L));
+      if(Math.hypot(ax+t*dx-mx, ay+t*dy-my)<tol) return sh;
+    }
+  }
+  return null;
+}
+function hitVertex(mx,my){
+  const s=sel(); if(!s) return -1;
+  const tol=9/view.scale;
+  for(let i=s.verts.length-1;i>=0;i--)
+    if(Math.hypot(s.verts[i].x-mx, s.verts[i].y-my)<tol) return i;
+  return -1;
+}
+board.addEventListener("pointerdown", e=>{
+  board.setPointerCapture(e.pointerId);
+  const [px,py]=evPos(e), [mx,my]=px2mm(px,py);
+  if(tool==="pan" || e.button===1){ drag={mode:"pan", px, py, ox:view.ox, oy:view.oy}; return; }
+  if(tool==="select"){
+    const i=hitVertex(mx,my);
+    if(i>=0){ selVtx=i; drag={mode:"vtx", i}; syncPanel(); draw(); return; }
+    // clicking a shape's outline selects it and starts dragging the whole shape
+    const hit = shapeAt(mx,my);
+    if(hit){
+      selId=hit.id; selVtx=-1;
+      drag={mode:"shape", start:[mx,my], orig:hit.verts.map(v=>({x:v.x,y:v.y,cx:v.cx,cy:v.cy}))};
+      syncPanel(); draw(); return;
+    }
+    selVtx=-1; syncPanel(); draw(); return;
+  }
+  if(tool==="path"){
+    if(!pending) pending={pts:[]};
+    if(pending.pts.length>2 && Math.hypot(pending.pts[0][0]-mx,pending.pts[0][1]-my)<10/view.scale){
+      finishPath(true); return;
+    }
+    pending.pts.push([Math.round(mx),Math.round(my)]); draw(); return;
+  }
+  drag={mode:"prim", start:[mx,my], cur:[mx,my]};
+});
+board.addEventListener("pointermove", e=>{
+  const [px,py]=evPos(e), [mx,my]=px2mm(px,py);
+  document.getElementById("stCur").textContent=`${mx.toFixed(1)}, ${my.toFixed(1)} mm`;
+  const s=sel();
+  if(s){
+    const w=toWorld(mx,my,s.pose);
+    document.getElementById("stWorld").textContent=
+      `${(w[0]*1000).toFixed(0)}, ${(w[1]*1000).toFixed(0)}, ${(w[2]*1000).toFixed(0)} mm`;
+    const ok=worldReachable(w);
+    const el=document.getElementById("stReach");
+    el.textContent = ok?"in reach":"out of reach";
+    el.className = ok?"ok":"bad";
+  }
+  if(pending){ pending.cur=[mx,my]; draw(); }
+  if(!drag) return;
+  if(drag.mode==="pan"){ view.ox=drag.ox+(px-drag.px); view.oy=drag.oy+(py-drag.py); draw(); }
+  else if(drag.mode==="vtx" && s){
+    const v=s.verts[drag.i];
+    if(v.kind==="arc"){ const b=vtxBulge(s,drag.i); v.x=Math.round(mx); v.y=Math.round(my);
+      const a=bulgeToArc([s.verts[drag.i-1].x,s.verts[drag.i-1].y],[v.x,v.y],b);
+      if(a) Object.assign(v,a); }
+    else { v.x=Math.round(mx); v.y=Math.round(my); }
+    syncPanel(); draw();
+  }
+  else if(drag.mode==="shape" && s){
+    const ddx=mx-drag.start[0], ddy=my-drag.start[1];
+    s.verts.forEach((v,i)=>{
+      v.x=Math.round(drag.orig[i].x+ddx); v.y=Math.round(drag.orig[i].y+ddy);
+      if(v.kind==="arc"){ v.cx=Math.round(drag.orig[i].cx+ddx); v.cy=Math.round(drag.orig[i].cy+ddy); }
+    });
+    syncPanel(); draw();
+  }
+  else if(drag.mode==="prim"){ drag.cur=[mx,my]; draw(); drawPrimPreview(); }
+});
+board.addEventListener("pointerup", e=>{
+  if(drag&&drag.mode==="prim") commitPrim();
+  drag=null;
+});
+board.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const [px,py]=evPos(e), before=px2mm(px,py);
+  view.scale=Math.max(.15,Math.min(14, view.scale*(e.deltaY<0?1.12:1/1.12)));
+  const after=px2mm(px,py);
+  view.ox+=(after[0]-before[0])*view.scale;
+  view.oy-=(after[1]-before[1])*view.scale;
+  draw();
+},{passive:false});
+
+function drawPrimPreview(){
+  if(!drag||drag.mode!=="prim") return;
+  const pts=primPoints(drag.start, drag.cur);
+  if(pts.length<2) return;
+  ctx.strokeStyle=css("--pen"); ctx.lineWidth=1.6; ctx.setLineDash([5,4]);
+  ctx.beginPath();
+  pts.forEach((p,i)=>{ const q=mm2px(p.x,p.y); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+  ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+}
+function primPoints(a,b){
+  const dx=b[0]-a[0], dy=b[1]-a[1];
+  const R=Math.round(Math.hypot(dx,dy));
+  const L=v=>({x:Math.round(v[0]), y:Math.round(v[1]), kind:"line"});
+  if(tool==="rect") return [L(a),L([a[0],b[1]]),L(b),L([b[0],a[1]])];
+  if(tool==="circle"){
+    if(R<3) return [];
+    return [ {x:Math.round(a[0]+R), y:Math.round(a[1]), kind:"line"},
+             {x:Math.round(a[0]-R), y:Math.round(a[1]), kind:"arc", cx:Math.round(a[0]), cy:Math.round(a[1]), cw:false},
+             {x:Math.round(a[0]+R), y:Math.round(a[1]), kind:"arc", cx:Math.round(a[0]), cy:Math.round(a[1]), cw:false} ];
+  }
+  const n = tool==="poly" ? 6 : 5;
+  if(R<3) return [];
+  const a0=Math.atan2(dy,dx), out=[];
+  if(tool==="poly"){
+    for(let i=0;i<n;i++){ const t=a0+i/n*2*Math.PI;
+      out.push(L([a[0]+R*Math.cos(t), a[1]+R*Math.sin(t)])); }
+  } else {
+    for(let i=0;i<n*2;i++){ const t=a0+i/(n*2)*2*Math.PI, rr=i%2?R*0.45:R;
+      out.push(L([a[0]+rr*Math.cos(t), a[1]+rr*Math.sin(t)])); }
+  }
+  return out;
+}
+function commitPrim(){
+  const pts=primPoints(drag.start, drag.cur);
+  if(pts.length<2) return;
+  const base=sel()?sel().pose:null;
+  const names={rect:"rect",circle:"circle",poly:"hexagon",star:"star"};
+  const s=newShape(`${names[tool]}_${uid}`, pts, base?Object.assign({},base):null);
+  shapes.push(s); selId=s.id; selVtx=-1;
+  syncPanel(); draw();
+}
+function finishPath(close){
+  if(!pending||pending.pts.length<2){ pending=null; return draw(); }
+  const base=sel()?sel().pose:null;
+  const s=newShape(`path_${uid}`,
+    pending.pts.map(p=>({x:p[0],y:p[1],kind:"line"})),
+    base?Object.assign({},base):null);
+  s.closed=!!close;
+  shapes.push(s); selId=s.id; selVtx=-1; pending=null;
+  syncPanel(); draw();
+}
+function removeVertex(){
+  const s=sel(); if(!s||selVtx<1) return;
+  s.verts.splice(selVtx,1); selVtx=-1; syncPanel(); draw();
+}
+
+/* --- panel inputs --- */
+function bindNum(id, get, set){
+  const el=document.getElementById(id);
+  el.addEventListener("input", ()=>{ const s=sel(); if(!s) return;
+    const v=parseFloat(el.value); if(Number.isNaN(v)) return; set(s,v); syncPanel(); draw(); });
+}
+bindNum("pX",0,(s,v)=>s.pose.x=v); bindNum("pY",0,(s,v)=>s.pose.y=v); bindNum("pZ",0,(s,v)=>s.pose.z=v);
+bindNum("pR",0,(s,v)=>s.pose.roll=v); bindNum("pP",0,(s,v)=>s.pose.pitch=v); bindNum("pYaw",0,(s,v)=>s.pose.yaw=v);
+/** Push tilt/facing/spin down into the canonical rpy the exporter uses. */
+function applyTfs(s){
+  const [r,p,y]=tfsToRpy(s.pose.tilt, s.pose.facing, s.pose.spin);
+  s.pose.roll=r; s.pose.pitch=p; s.pose.yaw=y;
+}
+document.querySelectorAll("#presets .chip").forEach(c=>{
+  c.onclick=()=>{ const s=sel(); if(!s) return;
+    s.pose.tilt=+c.dataset.tilt;
+    if(s.pose.oMode!=="simple"){ s.pose.oMode="simple"; }
+    applyTfs(s); syncPanel(); draw(); };
+});
+document.querySelectorAll("#modeSw .chip").forEach(c=>{
+  c.onclick=()=>{ const s=sel(); if(!s) return;
+    const m=c.dataset.mode;
+    if(m==="simple"){
+      // recover sliders from whatever rpy is currently set, so switching back
+      // and forth never silently changes the plane
+      const [t,f,sp]=rpyToTfs(s.pose.roll,s.pose.pitch,s.pose.yaw);
+      s.pose.tilt=Math.round(t); s.pose.facing=Math.round(f); s.pose.spin=Math.round(sp);
+      applyTfs(s);
+    }
+    s.pose.oMode=m; syncPanel(); draw(); };
+});
+["oTilt","oFace","oSpin"].forEach((id,i)=>{
+  document.getElementById(id).oninput=e=>{
+    const s=sel(); if(!s) return;
+    s.pose[["tilt","facing","spin"][i]]=+e.target.value;
+    applyTfs(s); syncPanel(); draw();
+  };
+});
+document.getElementById("sName").addEventListener("input",e=>{
+  const s=sel(); if(s){ s.name=e.target.value||"shape"; syncPanel(); }});
+document.getElementById("sClosed").onchange=e=>{ const s=sel(); if(s){s.closed=e.target.checked; syncPanel(); draw();} };
+document.getElementById("sSmooth").onchange=e=>{ const s=sel(); if(s){s.smooth=e.target.checked; selVtx=-1; syncPanel(); draw();} };
+document.getElementById("sSpeed").oninput=e=>{ const s=sel(); if(s){s.speed=+e.target.value; syncPanel();} };
+document.getElementById("vKind").onchange=e=>{
+  const s=sel(); if(!s||selVtx<1) return;
+  const v=s.verts[selVtx];
+  if(e.target.value==="arc"){
+    const a=bulgeToArc([s.verts[selVtx-1].x,s.verts[selVtx-1].y],[v.x,v.y],20);
+    if(a){ v.kind="arc"; Object.assign(v,a); } else toast("Segment too short for an arc");
+  } else { v.kind="line"; delete v.cx; delete v.cy; delete v.cw; }
+  syncPanel(); draw();
+};
+document.getElementById("vBulge").oninput=e=>{
+  const s=sel(); if(!s||selVtx<1) return;
+  const v=s.verts[selVtx];
+  const a=bulgeToArc([s.verts[selVtx-1].x,s.verts[selVtx-1].y],[v.x,v.y], +e.target.value);
+  if(a){ Object.assign(v,a); document.getElementById("bVal").textContent=e.target.value+" mm"; }
+  syncPanel(); draw();
+};
+document.getElementById("vDel").onclick=removeVertex;
+document.getElementById("btnDup").onclick=()=>{
+  const s=sel(); if(!s) return;
+  const c=JSON.parse(JSON.stringify(s)); c.id=uid++; c.name=s.name+"_copy";
+  shapes.push(c); selId=c.id; syncPanel(); draw();
+};
+function deleteShape(id){
+  const target = id===undefined ? selId : id;
+  if(target===null||target===undefined) return;
+  shapes=shapes.filter(s=>s.id!==target);
+  if(selId===target) selId=shapes.length?shapes[shapes.length-1].id:null;
+  selVtx=-1; syncPanel(); draw();
+}
+document.getElementById("btnDel").onclick=()=>deleteShape();
+document.getElementById("btnClear").onclick=()=>{ shapes=[]; selId=null; selVtx=-1; syncPanel(); draw(); };
+document.getElementById("btnFit").onclick=fit;
+document.getElementById("btnReach").onclick=e=>{
+  showReach=!showReach; e.currentTarget.setAttribute("aria-pressed",showReach); draw(); };
+/* ---- robot link -------------------------------------------------------
+   The page is served by the ROS node inside the container, so the API is
+   same-origin. Opened any other way (a published copy, a local file) the
+   probe fails and the Send button simply stays disabled. */
+let robotOnline=false;
+function setRobot(state, text){
+  robotOnline = state==="on";
+  const dot=document.getElementById("robotDot");
+  dot.style.background = state==="on" ? "var(--reach)"
+                       : state==="busy" ? "var(--pen)" : "var(--ink-3)";
+  document.getElementById("robotText").textContent=text;
+  document.getElementById("btnSend").disabled = state!=="on";
+}
+async function pollRobot(){
+  try{
+    const r=await fetch("/api/status",{cache:"no-store"});
+    if(!r.ok) throw new Error();
+    const j=await r.json();
+    setRobot(j.busy?"busy":"on", j.busy?"tracing\u2026":"xArm7 connected");
+  }catch(_){ setRobot("off","no robot"); }
+}
+document.getElementById("btnSend").onclick=async()=>{
+  const btn=document.getElementById("btnSend");
+  btn.disabled=true; setRobot("busy","tracing\u2026");
+  try{
+    const r=await fetch("/api/trace",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:buildJSON()});
+    const j=await r.json();
+    toast(j.ok ? j.message : "Robot refused it \u2014 "+(j.error||"unknown error"));
+  }catch(err){ toast("Could not reach the robot: "+err.message); }
+  finally{ pollRobot(); }
+};
+pollRobot(); setInterval(pollRobot, 4000);
+
+document.getElementById("btnImport").onclick=()=>{
+  const txt=prompt("Paste a shapes.json to load it back in:");
+  if(!txt) return;
+  try{
+    const r=importJSON(txt);
+    toast(r.warning ? "Imported with changes \u2014 "+r.warning
+                    : "Imported "+shapes.length+" shape(s)");
+  }
+  catch(err){ toast("Import failed: "+err.message); }
+};
+document.getElementById("btnCopy").onclick=async()=>{
+  const txt=buildJSON();
+  try{ await navigator.clipboard.writeText(txt); toast("shapes.json copied to clipboard"); }
+  catch(_){
+    const ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta);
+    ta.select(); try{ document.execCommand("copy"); toast("shapes.json copied"); }
+    catch(__){ toast("Copy failed — select the JSON below"); }
+    ta.remove();
+  }
+};
+
+/* --- 3D orbit --- */
+(function(){
+  const v=document.getElementById("view3d"); let d=null;
+  v.addEventListener("pointerdown",e=>{ v.setPointerCapture(e.pointerId); d={x:e.clientX,y:e.clientY,az:cam.az,el:cam.el}; });
+  v.addEventListener("pointermove",e=>{ if(!d) return;
+    cam.az=d.az+(e.clientX-d.x)*0.01;
+    cam.el=Math.max(-0.2,Math.min(1.4, d.el+(e.clientY-d.y)*0.006));
+    draw3d(); });
+  v.addEventListener("pointerup",()=>d=null);
+})();
+
+addEventListener("resize", resize);
+resize(); fit(); syncPanel();
+</script>

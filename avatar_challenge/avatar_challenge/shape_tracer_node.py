@@ -61,10 +61,9 @@ class ShapeTracerNode(Node):
         self.home_on_start = self.get_parameter("home_on_start").value
         self.home_between_shapes = self.get_parameter("home_between_shapes").value
 
+        # Optional: the designer server drives this node over HTTP and calls
+        # reload() per request instead of reading a file at startup.
         shapes_file = self.get_parameter("shapes_file").value
-        if not shapes_file:
-            self.get_logger().fatal("Required parameter 'shapes_file' was not set")
-            raise SystemExit(1)
 
         self.pose_plan_cli = self.create_client(PlanPose, "xarm_pose_plan")
         self.straight_plan_cli = self.create_client(PlanSingleStraight, "xarm_straight_plan")
@@ -113,8 +112,15 @@ class ShapeTracerNode(Node):
                 )
                 raise SystemExit(1)
 
+        self.shapes = []
+        if shapes_file:
+            self.reload(shapes_file)
+
+    def reload(self, shapes_file: str):
+        """Load (or replace) the shape list from a JSON file."""
         self.shapes = load_shapes(shapes_file, default_closed=self.default_closed)
         self.get_logger().info(f"Loaded {len(self.shapes)} shape(s) from {shapes_file}")
+        return self.shapes
 
     # -- service call helpers -------------------------------------------------
 
@@ -328,6 +334,11 @@ def main(argv=None):
     node = None
     try:
         node = ShapeTracerNode()
+        if not node.shapes:
+            node.get_logger().fatal(
+                "No shapes loaded -- set the 'shapes_file' parameter"
+            )
+            raise SystemExit(1)
         # The marker publisher is TRANSIENT_LOCAL, so a late RViz still gets the
         # outlines; this pause just keeps the first frame from racing node startup.
         time.sleep(1.0)
