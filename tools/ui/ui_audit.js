@@ -461,5 +461,64 @@ chk("shapes are exported as separate entries, not merged",
   chk("the base arrow has a direction", baseDirInPlane(sh.pose) !== null);
 })();
 
+// --- Send is gated on reachability, not just on a robot being present ------
+(() => {
+  shapes = []; selId = null;
+  const near = newShape("near", [{x:0,y:0,kind:"line"},{x:60,y:0,kind:"line"},
+                                 {x:60,y:40,kind:"line"}],
+                        {x:350, y:0, z:300, tilt:0, facing:0, spin:0});
+  shapes.push(near); selId = near.id; applyTfs(near);
+  robotOnline = true; syncPanel();
+  const send = REG.get("btnSend");
+  chk("reachable shape + robot -> Send enabled", send.disabled === false);
+  chk("reason line says it is reachable",
+      /reachable/i.test(REG.get("reachNote").textContent),
+      REG.get("reachNote").textContent);
+
+  // push it far outside the workspace
+  near.pose.x = 1500; applyTfs(near); syncPanel();
+  chk("unreachable shape -> Send disabled even with a robot", send.disabled === true);
+  chk("reason names the shape and the count",
+      /near:.*out of reach/.test(REG.get("reachNote").textContent),
+      REG.get("reachNote").textContent);
+
+  // back in range, but no robot
+  near.pose.x = 350; applyTfs(near); robotOnline = false; syncPanel();
+  chk("no robot -> Send disabled", send.disabled === true);
+  chk("reason distinguishes 'no robot' from 'out of reach'",
+      /waiting for a robot/i.test(REG.get("reachNote").textContent),
+      REG.get("reachNote").textContent);
+
+  shapes = []; selId = null; syncPanel();
+  chk("empty canvas -> Send disabled", send.disabled === true);
+})();
+
+// --- Facing reads N/A on a flat plane -------------------------------------
+(() => {
+  shapes = []; selId = null;
+  const sh = newShape("f", [{x:0,y:0,kind:"line"},{x:50,y:0,kind:"line"},
+                            {x:50,y:30,kind:"line"}]);
+  shapes.push(sh); selId = sh.id;
+  sh.pose.tilt = 0; applyTfs(sh); syncPanel();
+  chk("flat plane: Facing box is blank with an N/A placeholder",
+      REG.get("nFace").value === "" && REG.get("nFace").placeholder === "N/A",
+      `${REG.get("nFace").value}|${REG.get("nFace").placeholder}`);
+  sh.pose.tilt = 45; applyTfs(sh); syncPanel();
+  chk("tilted plane: Facing shows a number again",
+      REG.get("nFace").placeholder === "" && REG.get("nFace").disabled === false);
+})();
+
+// --- camera presets and zoom ----------------------------------------------
+(() => {
+  cam.az = 9; cam.el = 9; cam.zoom = 9;
+  Object.assign(cam, CAM_PRESETS.top);
+  chk("Top preset looks down", cam.el > 1.0, cam.el);
+  Object.assign(cam, CAM_PRESETS.front);
+  chk("Front preset is level and along +X", Math.abs(cam.az) < 1e-9 && cam.el < 0.2);
+  Object.assign(cam, CAM_PRESETS.side);
+  chk("Side preset is a quarter turn round", Math.abs(cam.az + 1.57) < 1e-6);
+  chk("presets reset zoom", cam.zoom === 1, cam.zoom);
+})();
+
 console.log(`\n${checks} checks, ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);

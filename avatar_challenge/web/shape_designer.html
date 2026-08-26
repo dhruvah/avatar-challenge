@@ -78,7 +78,7 @@ main{
 }
 .tool svg{width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.6}
 .tool span{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:9.5px;
-  text-transform:uppercase; letter-spacing:.05em}
+  text-transform:uppercase; letter-spacing:.05em; text-align:center; line-height:1.15}
 .tool:hover{background:var(--surface-2); color:var(--ink)}
 .tool[aria-pressed="true"]{background:var(--pen-wash); border-color:var(--pen); color:var(--pen)}
 
@@ -153,9 +153,11 @@ label.check input{accent-color:var(--pen)}
 .dot{width:7px; height:7px; border-radius:99px; flex:none}
 
 /* ---------- preview ---------- */
-#view3d{display:block; width:100%; height:210px; cursor:grab; touch-action:none;
+#view3d{display:block; width:100%; height:210px; transition:height .15s ease; cursor:grab; touch-action:none;
   border:1px solid var(--rule); border-radius:5px; background:var(--paper)}
 #view3d:active{cursor:grabbing}
+#view3d.big{height:460px}
+@media (prefers-reduced-motion:reduce){#view3d{transition:none}}
 
 /* ---------- export ---------- */
 .out{
@@ -245,8 +247,8 @@ label.check input{accent-color:var(--pen)}
       <button class="tool" data-tool="star" title="Star (S)">
         <svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.6 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.9l6-.8z"/></svg><span>Star</span></button>
       <span class="lab">View</span>
-      <button class="tool" data-tool="pan" title="Pan (space-drag anywhere)">
-        <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg><span>Pan</span></button>
+      <button class="tool" data-tool="pan" title="Move canvas (space-drag anywhere)">
+        <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg><span>Move&nbsp;canvas</span></button>
     </nav>
 
     <div class="stage" id="stage"><canvas id="board"></canvas></div>
@@ -255,6 +257,7 @@ label.check input{accent-color:var(--pen)}
       <section class="panel">
         <span class="lab">Shapes</span>
         <div class="shapes" id="shapeList"></div>
+        <p class="hint" id="reachNote" style="margin:6px 0 0"></p>
         <div class="row" style="margin-top:8px">
           <button class="btn sm" id="btnDup">Duplicate</button>
           <button class="btn sm" id="btnDel">Delete</button>
@@ -296,8 +299,19 @@ label.check input{accent-color:var(--pen)}
       </section>
 
       <section class="panel">
-        <span class="lab">Preview</span>
+        <div class="row" style="align-items:baseline">
+          <span class="lab">Preview</span>
+          <button class="chip" id="btnExpand" style="margin-left:auto">Expand</button>
+        </div>
+        <div class="chips" id="camPresets" style="margin:7px 0">
+          <button class="chip" data-cam="iso">Iso</button>
+          <button class="chip" data-cam="top">Top</button>
+          <button class="chip" data-cam="front">Front</button>
+          <button class="chip" data-cam="side">Side</button>
+        </div>
         <canvas id="view3d"></canvas>
+        <p class="hint" style="margin:5px 0 0">Drag to orbit &middot; scroll to
+        zoom &middot; a preset resets both.</p>
         <div class="legend">
           <span><i style="background:var(--reach)"></i>good</span>
           <span><i style="background:var(--marg)"></i>marginal</span>
@@ -542,7 +556,7 @@ function worldReachable(w, tilt){ return worldQuality(w, tilt) !== "."; }
    ============================================================ */
 let shapes = [], selId = null, selVtx = -1, tool = "select";
 let showReach = true;
-const cam = {az:-0.6, el:0.42};
+const cam = {az:-0.6, el:0.42, zoom:1};
 let uid = 1;
 
 function newShape(name, verts, pose, opts){
@@ -946,7 +960,7 @@ function project(p, W, H, sc){
 function s0tilt(){ return activePose().tilt; }
 function draw3d(){
   const v=document.getElementById("view3d"), c=v.getContext("2d");
-  const W=v.width/dpr, H=v.height/dpr, sc=Math.min(W,H)/1.75;
+  const W=v.width/dpr, H=v.height/dpr, sc=Math.min(W,H)/1.75*cam.zoom;
   c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H);
   c.fillStyle=css("--paper"); c.fillRect(0,0,W,H);
   const P=p=>project(p,W,H,sc);
@@ -1148,6 +1162,7 @@ function enablePanel(){
 function syncPanel(){
   const s=sel();
   document.getElementById("jsonOut").textContent = buildJSON();
+  updateSendState();
   // shape list
   const list=document.getElementById("shapeList"); list.innerHTML="";
   shapes.forEach(sh=>{
@@ -1173,15 +1188,19 @@ function syncPanel(){
   set("pX",s.pose.x); set("pY",s.pose.y); set("pZ",s.pose.z);
   const t=Math.round(s.pose.tilt), f=Math.round(s.pose.facing), sp=Math.round(s.pose.spin);
   set("oTilt",t); set("nTilt",t);
-  set("oFace",f); set("nFace",f);
+  set("oFace",f); set("nFace", (s.pose.tilt < 2 || s.pose.tilt > 178) ? "" : f);
   set("oSpin",sp); set("nSpin",sp);
   document.getElementById("tiltWord").textContent=tiltWord(s.pose.tilt);
   // On a flat (or fully inverted) plane the normal is +/-Z, so "which way it
   // leans" is undefined -- Facing and Spin would do the same thing. Disable it
   // rather than let the control look broken.
   const flat = s.pose.tilt < 2 || s.pose.tilt > 178;
+  const face = document.getElementById("nFace");
   document.getElementById("oFace").disabled = flat;
-  document.getElementById("nFace").disabled = flat;
+  face.disabled = flat;
+  // A flat plane's normal is +/-Z, so "which way it leans" has no value at all
+  // -- show that rather than a misleading 0.
+  face.placeholder = flat ? "N/A" : "";
   document.getElementById("faceRow").classList.toggle("muted", flat);
   document.getElementById("faceNote").textContent =
     flat ? "not applicable while the plane is flat \u2014 use Spin" : "";
@@ -1442,9 +1461,29 @@ function deleteShape(id){
 }
 document.getElementById("btnDel").onclick=()=>deleteShape();
 document.getElementById("btnClear").onclick=()=>{ shapes=[]; selId=null; selVtx=-1; syncPanel(); draw(); };
-const CAM0={az:-0.6, el:0.42};
+const CAM0={az:-0.6, el:0.42, zoom:1};
+const CAM_PRESETS={
+  iso:   {az:-0.6,  el:0.42, zoom:1},
+  top:   {az:-0.6,  el:1.50, zoom:1},   // looking straight down at the table
+  front: {az:0,     el:0.05, zoom:1},   // along +X, the direction the arm faces
+  side:  {az:-1.57, el:0.05, zoom:1},
+};
+document.querySelectorAll("#camPresets .chip").forEach(c=>{
+  c.onclick=()=>{ Object.assign(cam, CAM_PRESETS[c.dataset.cam]); draw3d(); };
+});
+document.getElementById("btnExpand").onclick=e=>{
+  const v=document.getElementById("view3d");
+  const big=v.classList.toggle("big");
+  e.currentTarget.textContent = big ? "Collapse" : "Expand";
+  resize();               // the backing store has to follow the CSS height
+};
+document.getElementById("view3d").addEventListener("wheel", e=>{
+  e.preventDefault();
+  cam.zoom = Math.max(0.4, Math.min(4, cam.zoom * (e.deltaY<0 ? 1.12 : 1/1.12)));
+  draw3d();
+}, {passive:false});
 document.getElementById("btnReset").onclick=()=>{
-  cam.az=CAM0.az; cam.el=CAM0.el;   // 3D orbit back to its default angle
+  Object.assign(cam, CAM0);        // 3D orbit and zoom back to defaults
   fit();                            // and the canvas back around the shape
 };
 document.getElementById("btnReach").onclick=e=>{
@@ -1454,13 +1493,55 @@ document.getElementById("btnReach").onclick=e=>{
    same-origin. Opened any other way (a published copy, a local file) the
    probe fails and the Send button simply stays disabled. */
 let robotOnline=false;
+
+/** Points the measured map says the arm cannot reach at all, per shape.
+    Marginal and near-singular are reachable and deliberately do not count. */
+function unreachableByShape(){
+  const out=[];
+  for(const sh of shapes){
+    const pts=flatten(sh);
+    const bad=pts.filter(p=>worldQuality(toWorld(p[0],p[1],sh.pose), sh.pose.tilt)===".").length;
+    if(bad) out.push({name:sh.name, bad, total:pts.length});
+  }
+  return out;
+}
+
+/** Send is allowed only when a robot is listening AND nothing is out of reach.
+    Both conditions live here so neither can re-enable the button behind the
+    other's back. */
+function updateSendState(){
+  const bad=unreachableByShape();
+  const note=document.getElementById("reachNote");
+  const btn=document.getElementById("btnSend");
+  if(!shapes.length){
+    note.textContent=""; btn.disabled=true;
+    btn.title="Draw a shape first";
+    return;
+  }
+  if(bad.length){
+    const first=bad[0];
+    note.textContent = bad.length===1
+      ? `${first.name}: ${first.bad} of ${first.total} points out of reach \u2014 move it into the clear area`
+      : `${bad.length} shapes have points out of reach \u2014 move them into the clear area`;
+    note.style.color="var(--noreach)";
+    btn.disabled=true;
+    btn.title="Some points are outside the arm's workspace";
+    return;
+  }
+  note.textContent = robotOnline ? "All points reachable." : "All points reachable \u2014 waiting for a robot.";
+  note.style.color="var(--ink-3)";
+  btn.disabled = !robotOnline;
+  btn.title = robotOnline ? "Trace these shapes on the arm" : "No robot is listening on this page";
+}
+
 function setRobot(state, text){
   robotOnline = state==="on";
   const dot=document.getElementById("robotDot");
   dot.style.background = state==="on" ? "var(--reach)"
                        : state==="busy" ? "var(--pen)" : "var(--ink-3)";
   document.getElementById("robotText").textContent=text;
-  document.getElementById("btnSend").disabled = state!=="on";
+  updateSendState();
+  if(state==="busy") document.getElementById("btnSend").disabled=true;
 }
 async function pollRobot(){
   try{

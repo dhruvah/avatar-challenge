@@ -148,6 +148,13 @@ if you mean it). Nothing needs to be published from the container.
 Draw on a millimetre grid, watch the workspace shading, press **Send to robot**,
 and the trace animates live over your drawing while the arm moves in RViz.
 
+**Send to robot is disabled while any point is out of reach**, with a line
+naming the shape and how many of its points are outside the workspace. Marginal
+and near-singular ground do not block — they are reachable.
+
+The preview orbits by dragging and zooms by scrolling, with Iso / Top / Front /
+Side presets and an Expand button when the small pane is not enough.
+
 The shading has four bands and **only one of them blocks anything**:
 
 | Band | Meaning |
