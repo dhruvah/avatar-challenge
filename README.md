@@ -7,7 +7,7 @@ supplied `avatarrobotics/ros-humble-xarm:20250602` container.
 > **No browser or web service is needed to evaluate this.**
 > `start.launch.py` loads the included `config/shapes.json` and traces it
 > automatically. An optional visual designer lives on the
-> [`demo-designer`](https://github.com/dhruvah/avatar-challenge/tree/demo-designer)
+> [`demo-gui`](https://github.com/dhruvah/avatar-challenge/tree/demo-gui)
 > branch; it exports the same JSON this branch consumes.
 
 ---
@@ -123,7 +123,7 @@ Both tessellate into `arc_segments` (default 16) straight sub-segments.
 ## 3. Optional: the visual designer
 
 The required evaluation path does not need it. On the
-[`demo-designer`](https://github.com/dhruvah/avatar-challenge/tree/demo-designer)
+[`demo-gui`](https://github.com/dhruvah/avatar-challenge/tree/demo-gui)
 branch there is a browser designer for authoring the same JSON: draw on a
 millimetre grid, see the workspace shaded by measured manipulability, press
 **Send to robot**, and watch the trace animate live.
@@ -131,7 +131,7 @@ millimetre grid, see the workspace shaded by measured manipulability, press
 ![The shape designer](docs/shape_designer.png)
 
 ```bash
-git checkout demo-designer
+git checkout demo-gui
 colcon build --packages-select avatar_challenge && source install/setup.bash
 
 ros2 launch avatar_challenge designer.launch.py    # MoveIt + RViz + the designer
