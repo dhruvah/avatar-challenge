@@ -22,7 +22,11 @@
   --pen-bright:#12A0B4;
   --pen-wash:rgba(14,124,139,.10);
   --reach:#4F8A3D;
-  --noreach:#C0532B;
+  /* map rendering: out-of-reach is grey because it is outside the workspace,
+     not a degree of badness inside it -- the warm colours are the gradient */
+  --noreach:#5A6472;
+  /* messaging: a problem stated in words should still read as a problem */
+  --alert:#C0532B;
   --noreach-wash:rgba(96,104,116,.30);
   --sing:#B0342F;
   --sing-wash:rgba(198,54,44,.22);
@@ -149,15 +153,14 @@ label.check input{accent-color:var(--pen)}
 .btn[disabled]:hover{border-color:var(--rule); color:var(--ink)}
 .btn.primary[disabled]:hover{background:var(--pen); border-color:var(--pen); color:#fff}
 .shp .x{padding:0 5px; line-height:1.3; border-color:transparent; background:none; color:var(--ink-3)}
-.shp .x:hover{color:var(--noreach); border-color:var(--noreach)}
+.shp .x:hover{color:var(--alert); border-color:var(--alert)}
 .dot{width:7px; height:7px; border-radius:99px; flex:none}
 
 /* ---------- preview ---------- */
-#view3d{display:block; width:100%; height:210px; transition:height .15s ease; cursor:grab; touch-action:none;
+#view3d{display:block; width:100%; height:210px; cursor:grab; touch-action:none;
   border:1px solid var(--rule); border-radius:5px; background:var(--paper)}
 #view3d:active{cursor:grabbing}
 #view3d.big{height:460px}
-@media (prefers-reduced-motion:reduce){#view3d{transition:none}}
 
 /* ---------- export ---------- */
 .out{
@@ -175,7 +178,7 @@ label.check input{accent-color:var(--pen)}
 }
 .status b{color:var(--ink-2); font-weight:500}
 .status .sep{width:1px; height:12px; background:var(--rule)}
-.ok{color:var(--reach)} .warn{color:var(--marg)} .bad{color:var(--noreach)}
+.ok{color:var(--reach)} .warn{color:var(--marg)} .bad{color:var(--alert)}
 
 .legend{display:flex; flex-wrap:wrap; gap:10px; margin-top:7px; font-size:11px; color:var(--ink-3)}
 .legend span{display:flex; align-items:center; gap:4px}
@@ -1523,7 +1526,7 @@ function updateSendState(){
     note.textContent = bad.length===1
       ? `${first.name}: ${first.bad} of ${first.total} points out of reach \u2014 move it into the clear area`
       : `${bad.length} shapes have points out of reach \u2014 move them into the clear area`;
-    note.style.color="var(--noreach)";
+    note.style.color="var(--alert)";
     btn.disabled=true;
     btn.title="Some points are outside the arm's workspace";
     return;
@@ -1580,7 +1583,7 @@ async function pollProgress(){
     document.getElementById("barFill").style.width=pct+"%";
     const which = j.shape_total>1 ? ` (${(j.shape_index||0)+1}/${j.shape_total})` : "";
     const bar=document.getElementById("barFill");
-    bar.style.background = j.state==="failed" ? "var(--noreach)" : "var(--live)";
+    bar.style.background = j.state==="failed" ? "var(--alert)" : "var(--live)";
     document.getElementById("barText").textContent =
       j.state==="failed"
         ? `${j.shape||"trace"} failed at ${pct}% \u2014 ${j.error||"unknown error"}`

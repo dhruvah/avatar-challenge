@@ -35,8 +35,12 @@ function mkEl(id, tag) {
     classList: {
       _s: new Set(),
       add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); },
-      toggle(c, on) { on === undefined ? (this._s.has(c) ? this._s.delete(c) : this._s.add(c))
-                                       : (on ? this._s.add(c) : this._s.delete(c)); },
+      // the real classList.toggle returns the resulting state; code relies on it
+      toggle(c, on) {
+        const next = on === undefined ? !this._s.has(c) : !!on;
+        next ? this._s.add(c) : this._s.delete(c);
+        return next;
+      },
       contains(c) { return this._s.has(c); },
     },
     setAttribute(k, v) { this._attrs[k] = String(v); },
@@ -518,6 +522,18 @@ chk("shapes are exported as separate entries, not merged",
   Object.assign(cam, CAM_PRESETS.side);
   chk("Side preset is a quarter turn round", Math.abs(cam.az + 1.57) < 1e-6);
   chk("presets reset zoom", cam.zoom === 1, cam.zoom);
+})();
+
+// --- preview expand ---------------------------------------------------------
+(() => {
+  const v = REG.get("view3d"), btn = REG.get("btnExpand");
+  chk("preview starts collapsed", v.classList.contains("big") === false);
+  btn.click();
+  chk("Expand grows the preview", v.classList.contains("big") === true);
+  chk("button offers to collapse", btn.textContent === "Collapse", btn.textContent);
+  btn.click();
+  chk("Collapse restores it", v.classList.contains("big") === false);
+  chk("button offers to expand again", btn.textContent === "Expand", btn.textContent);
 })();
 
 console.log(`\n${checks} checks, ${fails} failure(s)`);
