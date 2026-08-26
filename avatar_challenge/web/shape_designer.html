@@ -29,6 +29,8 @@
   --marg:#B07A18;
   --marg-wash:rgba(176,122,24,.11);
   --live:#8A3FC0;
+  --arm:#93A3AE;
+  --arm-joint:#5C6B76;
   --shadow:rgba(17,24,32,.10);
   --focus:#12A0B4;
 }
@@ -134,6 +136,8 @@ label.check input{accent-color:var(--pen)}
 .shp .ct{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--ink-3)}
 .orow{display:grid; grid-template-columns:46px 1fr 62px; gap:8px; align-items:center}
 .orow .lab{margin:0}
+.orow.muted{opacity:.45}
+.orow input[disabled]{cursor:not-allowed}
 .orow input[type=number]{padding:4px 6px; font-size:11.5px}
 .link{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-3);
   font-family:"IBM Plex Mono",monospace}
@@ -211,7 +215,7 @@ label.check input{accent-color:var(--pen)}
       <span class="sub">xArm 7 shape designer</span>
     </div>
     <div class="chips" role="group" aria-label="Canvas view">
-      <button class="chip" id="btnFit">Fit</button>
+      <button class="chip" id="btnReset">Reset view</button>
       <button class="chip" id="btnReach" aria-pressed="true">Reach overlay</button>
     </div>
     <span class="link" id="robotState" title="Robot connection">
@@ -263,11 +267,6 @@ label.check input{accent-color:var(--pen)}
           <div class="field"><span class="lab">Z mm</span><input type="number" id="pZ" step="5"></div>
         </div>
         <div class="row" style="margin-top:10px"><span class="lab">How the plane sits</span></div>
-        <div class="chips" id="presets" style="margin:7px 0">
-          <button class="chip" data-tilt="0">Table</button>
-          <button class="chip" data-tilt="45">Easel</button>
-          <button class="chip" data-tilt="90">Wall</button>
-        </div>
 
         <div class="orow">
           <span class="lab">Tilt</span>
@@ -276,12 +275,13 @@ label.check input{accent-color:var(--pen)}
         </div>
         <p class="hint" id="tiltWord" style="margin:2px 0 8px"></p>
 
-        <div class="orow">
+        <div class="orow" id="faceRow">
           <span class="lab">Facing</span>
           <input type="range" id="oFace" min="-180" max="180" step="1">
           <input type="number" id="nFace" min="-180" max="180" step="5">
         </div>
-        <div class="orow" style="margin-top:6px">
+        <p class="hint" id="faceNote" style="margin:2px 0 6px"></p>
+        <div class="orow">
           <span class="lab">Spin</span>
           <input type="range" id="oSpin" min="-180" max="180" step="1">
           <input type="number" id="nSpin" min="-180" max="180" step="5">
@@ -393,6 +393,42 @@ function envSpan(zi, tilt){
   let lo=-1, hi=-1;
   for(let i=0;i<row.length;i++) if(row[i]!=="."){ if(lo<0) lo=i; hi=i; }
   return lo<0?null:[QUAL.radii[lo], QUAL.radii[hi]];
+}
+
+/* ============================================================
+   xArm 7 kinematic chain, lifted straight from the URDF in the container
+   (joint origins, axes and types only -- no meshes, under 1 kB). Enough to
+   draw the arm as a jointed skeleton so you can see how it has to reach to
+   make the shape, without shipping megabytes of STL.
+   ============================================================ */
+const CHAIN = [{"n":"joint1","k":"revolute","o":[0.0,0.0,0.267],"R":[[1.0,0.0,0.0],[0.0,1.0,0.0],[-0.0,0.0,1.0]],"a":[0.0,0.0,1.0]},{"n":"joint2","k":"revolute","o":[0.0,0.0,0.0],"R":[[1.0,0.0,-0.0],[0.0,-4e-06,1.0],[-0.0,-1.0,-4e-06]],"a":[0.0,0.0,1.0]},{"n":"joint3","k":"revolute","o":[0.0,-0.293,0.0],"R":[[1.0,0.0,0.0],[0.0,-4e-06,-1.0],[-0.0,1.0,-4e-06]],"a":[0.0,0.0,1.0]},{"n":"joint4","k":"revolute","o":[0.0525,0.0,0.0],"R":[[1.0,0.0,0.0],[0.0,-4e-06,-1.0],[-0.0,1.0,-4e-06]],"a":[0.0,0.0,1.0]},{"n":"joint5","k":"revolute","o":[0.0775,-0.3425,0.0],"R":[[1.0,0.0,0.0],[0.0,-4e-06,-1.0],[-0.0,1.0,-4e-06]],"a":[0.0,0.0,1.0]},{"n":"joint6","k":"revolute","o":[0.0,0.0,0.0],"R":[[1.0,0.0,0.0],[0.0,-4e-06,-1.0],[-0.0,1.0,-4e-06]],"a":[0.0,0.0,1.0]},{"n":"joint7","k":"revolute","o":[0.076,0.097,0.0],"R":[[1.0,0.0,-0.0],[0.0,-4e-06,1.0],[-0.0,-1.0,-4e-06]],"a":[0.0,0.0,1.0]},{"n":"joint_eef","k":"fixed","o":[0.0,0.0,0.0],"R":[[1.0,0.0,0.0],[0.0,1.0,0.0],[-0.0,0.0,1.0]],"a":[0.0,0.0,1.0]}];
+const HOME_Q = [0, -0.5706, 0, 0.5039, 0, 1.0745, 0];
+
+/** Joint origins along the chain for joint vector q, in the base frame. */
+function armPoints(q){
+  let T = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+  const mul=(A,B)=>A.map((r,i)=>B[0].map((_,j)=>r.reduce((t,_v,k)=>t+A[i][k]*B[k][j],0)));
+  const pts=[[0,0,0]];
+  let qi=0;
+  for(const j of CHAIN){
+    const L=[[j.R[0][0],j.R[0][1],j.R[0][2],j.o[0]],
+             [j.R[1][0],j.R[1][1],j.R[1][2],j.o[1]],
+             [j.R[2][0],j.R[2][1],j.R[2][2],j.o[2]],
+             [0,0,0,1]];
+    T=mul(T,L);
+    pts.push([T[0][3],T[1][3],T[2][3]]);
+    if(j.k==="revolute"||j.k==="continuous"){
+      const th=q[qi++]||0, a=j.a;
+      const n=Math.hypot(a[0],a[1],a[2]), ax=[a[0]/n,a[1]/n,a[2]/n];
+      const c=Math.cos(th), si=Math.sin(th), v=1-c;
+      const R=[[c+ax[0]*ax[0]*v, ax[0]*ax[1]*v-ax[2]*si, ax[0]*ax[2]*v+ax[1]*si],
+               [ax[1]*ax[0]*v+ax[2]*si, c+ax[1]*ax[1]*v, ax[1]*ax[2]*v-ax[0]*si],
+               [ax[2]*ax[0]*v-ax[1]*si, ax[2]*ax[1]*v+ax[0]*si, c+ax[2]*ax[2]*v]];
+      T=mul(T,[[R[0][0],R[0][1],R[0][2],0],[R[1][0],R[1][1],R[1][2],0],
+               [R[2][0],R[2][1],R[2][2],0],[0,0,0,1]]);
+    }
+  }
+  return pts;
 }
 
 /* ============================================================
@@ -687,9 +723,14 @@ function drawVerts(s, isSel){
 
 /* live trace overlay: the tool path the robot reports while it is drawing,
    already projected into this shape's 2D frame by the server */
-let live={path:[], shape:null, fraction:0, tracing:false};
+let live={path:[], shape:null, fraction:0, tracing:false, joints:null};
 function drawLive(){
   if(!live.path.length) return;
+  // The path is expressed in the traced shape's own frame, so it is only
+  // meaningful over that shape. Without this, tracing A then selecting B drew
+  // A's path on top of B.
+  const s=sel();
+  if(!s || (live.shape && live.shape!==s.name)) return;
   ctx.save();
   ctx.strokeStyle=css("--live"); ctx.lineWidth=2.6;
   ctx.lineJoin="round"; ctx.lineCap="round";
@@ -759,10 +800,20 @@ function draw3d(){
       i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); }
     c.stroke();
   }
-  // base column
-  c.strokeStyle=css("--ink-3"); c.lineWidth=1.5;
-  const b0=P([0,0,0]), b1=P([0,0,0.126]);
-  c.beginPath(); c.moveTo(b0[0],b0[1]); c.lineTo(b1[0],b1[1]); c.stroke();
+  // the arm itself, posed from live joint angles when the robot is connected
+  const q = (live.joints && live.joints.length===7) ? live.joints : HOME_Q;
+  const ap = armPoints(q);
+  c.strokeStyle=css("--arm"); c.lineWidth=5; c.lineCap="round"; c.lineJoin="round";
+  c.beginPath();
+  ap.forEach((p,i)=>{ const s2=P(p); i?c.lineTo(s2[0],s2[1]):c.moveTo(s2[0],s2[1]); });
+  c.stroke();
+  c.strokeStyle=css("--arm-joint"); c.lineWidth=1.6;
+  ap.forEach((p,i)=>{ if(i===0||i===ap.length-1) return;
+    const s2=P(p); c.beginPath(); c.arc(s2[0],s2[1],2.8,0,7);
+    c.fillStyle=css("--surface"); c.fill(); c.stroke(); });
+  const tip=P(ap[ap.length-1]);
+  c.beginPath(); c.arc(tip[0],tip[1],3.6,0,7);
+  c.fillStyle=css("--arm-joint"); c.fill();
 
   const s=sel(); if(!s) return;
   const pts=flatten(s).map(p=>toWorld(p[0],p[1],s.pose));
@@ -902,13 +953,20 @@ function syncPanel(){
   if(!s) return;
   const set=(id,val)=>{ const e=document.getElementById(id); if(document.activeElement!==e) e.value=val; };
   set("pX",s.pose.x); set("pY",s.pose.y); set("pZ",s.pose.z);
-  document.querySelectorAll("#presets .chip").forEach(c=>
-    c.setAttribute("aria-pressed", Math.round(s.pose.tilt)===+c.dataset.tilt));
   const t=Math.round(s.pose.tilt), f=Math.round(s.pose.facing), sp=Math.round(s.pose.spin);
   set("oTilt",t); set("nTilt",t);
   set("oFace",f); set("nFace",f);
   set("oSpin",sp); set("nSpin",sp);
   document.getElementById("tiltWord").textContent=tiltWord(s.pose.tilt);
+  // On a flat (or fully inverted) plane the normal is +/-Z, so "which way it
+  // leans" is undefined -- Facing and Spin would do the same thing. Disable it
+  // rather than let the control look broken.
+  const flat = s.pose.tilt < 2 || s.pose.tilt > 178;
+  document.getElementById("oFace").disabled = flat;
+  document.getElementById("nFace").disabled = flat;
+  document.getElementById("faceRow").classList.toggle("muted", flat);
+  document.getElementById("faceNote").textContent =
+    flat ? "not applicable while the plane is flat \u2014 use Spin" : "";
   document.getElementById("rpyOut").textContent=
     `exported rpy: ${s.pose.roll.toFixed(3)}, ${s.pose.pitch.toFixed(3)}, ${s.pose.yaw.toFixed(3)} rad`;
   // vertex box
@@ -1119,11 +1177,6 @@ function applyTfs(s){
   const [r,p,y]=tfsToRpy(s.pose.tilt, s.pose.facing, s.pose.spin);
   s.pose.roll=r; s.pose.pitch=p; s.pose.yaw=y;
 }
-document.querySelectorAll("#presets .chip").forEach(c=>{
-  c.onclick=()=>{ const s=sel(); if(!s) return;
-    s.pose.tilt=+c.dataset.tilt;
-    applyTfs(s); syncPanel(); draw(); };
-});
 [["oTilt","nTilt","tilt"],["oFace","nFace","facing"],["oSpin","nSpin","spin"]]
   .forEach(([slider,number,key])=>{
     const set=v=>{ const s=sel(); if(!s||Number.isNaN(v)) return;
@@ -1167,7 +1220,11 @@ function deleteShape(id){
 }
 document.getElementById("btnDel").onclick=()=>deleteShape();
 document.getElementById("btnClear").onclick=()=>{ shapes=[]; selId=null; selVtx=-1; syncPanel(); draw(); };
-document.getElementById("btnFit").onclick=fit;
+const CAM0={az:-0.6, el:0.42};
+document.getElementById("btnReset").onclick=()=>{
+  cam.az=CAM0.az; cam.el=CAM0.el;   // 3D orbit back to its default angle
+  fit();                            // and the canvas back around the shape
+};
 document.getElementById("btnReach").onclick=e=>{
   showReach=!showReach; e.currentTarget.setAttribute("aria-pressed",showReach); draw(); };
 /* ---- robot link -------------------------------------------------------
@@ -1189,6 +1246,12 @@ async function pollRobot(){
     if(!r.ok) throw new Error();
     const j=await r.json();
     setRobot(j.busy?"busy":"on", j.busy?"tracing\u2026":"xArm7 connected");
+    if(!j.busy){
+      try{
+        const pr=await (await fetch("/api/progress",{cache:"no-store"})).json();
+        if(Array.isArray(pr.joints)){ live.joints=pr.joints; draw3d(); }
+      }catch(_){}
+    }
   }catch(_){ setRobot("off","no robot"); }
 }
 let livePoll=null;
@@ -1199,6 +1262,7 @@ async function pollProgress(){
     if(!r.ok) return;
     const j=await r.json();
     if(Array.isArray(j.path)) live.path=j.path;
+    if(Array.isArray(j.joints)) live.joints=j.joints;
     live.fraction=j.fraction||0; live.tracing=!!j.tracing; live.shape=j.shape||null;
     const pct=Math.round(live.fraction*100);
     document.getElementById("barFill").style.width=pct+"%";

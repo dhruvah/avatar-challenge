@@ -409,6 +409,17 @@ class ShapeTracerNode(Node):
         msg.trajectory.append(trajectory)
         self.display_pub.publish(msg)
 
+    def current_joints(self):
+        """Current actuated joint positions, in chain order, for the UI's arm view."""
+        js, chain = self._joint_state, self._chain
+        if js is None or chain is None:
+            return None
+        idx = {n: i for i, n in enumerate(js.name)}
+        try:
+            return [round(float(js.position[idx[j.name]]), 5) for j in chain.actuated]
+        except KeyError:
+            return None
+
     def progress_snapshot(self):
         """What the designer needs to animate the trace, in the shape's own frame.
 
@@ -417,9 +428,10 @@ class ShapeTracerNode(Node):
         transform, so the live overlay cannot drift from the drawing it is
         drawn over.
         """
+        joints = self.current_joints()
         prog = self._progress
         if not prog:
-            return {"tracing": False}
+            return {"tracing": False, "joints": joints}
         pts = list(self._actual)          # atomic snapshot; ROS thread appends
         # A long trace accumulates thousands of samples and the UI polls several
         # times a second. Uniformly decimate to a cap that is still far denser
@@ -440,6 +452,7 @@ class ShapeTracerNode(Node):
         frac = 1.0 if prog.get("done") else min(1.0, elapsed / max(prog["duration"], 1e-6))
         return {
             "tracing": not prog.get("done", False),
+            "joints": joints,
             "shape": prog["shape"],
             "fraction": round(frac, 4),
             "elapsed": round(elapsed, 2),
