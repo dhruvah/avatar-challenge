@@ -13,7 +13,7 @@ from geometry_msgs.msg import Pose, Point, PoseStamped
 from moveit_msgs.srv import GetPositionIK
 from sensor_msgs.msg import JointState
 from visualization_msgs.msg import Marker, MarkerArray
-from xarm_msgs.srv import PlanPose, PlanSingleStraight, PlanExec
+from xarm_msgs.srv import PlanPose, PlanSingleStraight, PlanExec, PlanJoint
 
 from avatar_challenge.blended_path import BlendedPathExecutor
 from avatar_challenge.geometry import build_shape_waypoints, Waypoint
@@ -45,12 +45,21 @@ class ShapeTracerNode(Node):
         self.declare_parameter("blend", True)
         self.declare_parameter("blend_max_step", 0.005)
         self.declare_parameter("blend_min_fraction", 0.99)
+        # A known, natural ready configuration: base straight ahead, elbow bent,
+        # zero wrist roll. Returning here before each shape makes the free-space
+        # approach short and repeatable -- see home_between_shapes below.
+        self.declare_parameter("home_joints", [0.0, -0.5706, 0.0, 0.5039, 0.0, 1.0745, 0.0])
+        self.declare_parameter("home_on_start", True)
+        self.declare_parameter("home_between_shapes", False)
 
         self.lift_height = self.get_parameter("lift_height").value
         self.arc_segments = self.get_parameter("arc_segments").value
         self.default_closed = self.get_parameter("closed").value
         self.service_timeout = self.get_parameter("service_timeout_sec").value
         self.blend = self.get_parameter("blend").value
+        self.home_joints = list(self.get_parameter("home_joints").value)
+        self.home_on_start = self.get_parameter("home_on_start").value
+        self.home_between_shapes = self.get_parameter("home_between_shapes").value
 
         shapes_file = self.get_parameter("shapes_file").value
         if not shapes_file:
@@ -60,6 +69,7 @@ class ShapeTracerNode(Node):
         self.pose_plan_cli = self.create_client(PlanPose, "xarm_pose_plan")
         self.straight_plan_cli = self.create_client(PlanSingleStraight, "xarm_straight_plan")
         self.exec_cli = self.create_client(PlanExec, "xarm_exec_plan")
+        self.joint_plan_cli = self.create_client(PlanJoint, "xarm_joint_plan")
         self.ik_cli = self.create_client(GetPositionIK, "/compute_ik")
         # Latched: RViz usually subscribes after the node has already published.
         self.marker_pub = self.create_publisher(
@@ -72,6 +82,7 @@ class ShapeTracerNode(Node):
             ("xarm_pose_plan", self.pose_plan_cli),
             ("xarm_straight_plan", self.straight_plan_cli),
             ("xarm_exec_plan", self.exec_cli),
+            ("xarm_joint_plan", self.joint_plan_cli),
             ("/compute_ik", self.ik_cli),
         ]:
             self.get_logger().info(f"Waiting for service '{name}'...")
@@ -127,6 +138,42 @@ class ShapeTracerNode(Node):
         req.target = _to_pose_msg(position, quaternion)
         self._call(self.straight_plan_cli, req, f"straight_plan({description})")
         self._call(self.exec_cli, PlanExec.Request(wait=True), f"exec_plan({description})")
+
+    def _approach(self, waypoint, shape_name):
+        """Move to the hover pose above the first vertex.
+
+        A straight line is tried first: it is deterministic and reads as a
+        single clean move. The free-space fallback is planned by RRTConnect,
+        which is sampling-based -- it finds a way around obstacles but wanders,
+        and produces a different path on every run. So it is used only when the
+        straight line genuinely cannot be planned.
+        """
+        try:
+            self._plan_and_exec_straight(waypoint.position, waypoint.quaternion,
+                                         f"{shape_name}:approach(straight)")
+            return
+        except RuntimeError as exc:
+            self.get_logger().warn(
+                f"[{shape_name}] straight-line approach unavailable ({exc}); "
+                f"falling back to the sampling-based planner"
+            )
+        self._plan_and_exec_free(waypoint.position, waypoint.quaternion,
+                                 f"{shape_name}:approach(free)")
+
+    def go_home(self):
+        """Drive to the configured ready pose in joint space.
+
+        The free-space approach is planned by RRTConnect, which is sampling-based:
+        from an arbitrary start it produces a different, often meandering path
+        every run. Starting each shape from the same known configuration makes
+        that approach short, repeatable, and easy to watch. It also gives the
+        Cartesian solver a sane seed, so it picks a natural IK branch rather than
+        whatever contorted one happens to sit near the previous shape's end.
+        """
+        req = PlanJoint.Request()
+        req.target = [float(v) for v in self.home_joints]
+        self._call(self.joint_plan_cli, req, "joint_plan(home)")
+        self._call(self.exec_cli, PlanExec.Request(wait=True), "exec_plan(home)")
 
     # -- robot state ------------------------------------------------------------
 
@@ -212,6 +259,8 @@ class ShapeTracerNode(Node):
             lift_height=self.lift_height,
             arc_segments=self.arc_segments,
         )
+        if self.home_between_shapes:
+            self.go_home()
         self.check_reachable(shape, waypoints)
         self.get_logger().info(f"[{shape.name}] tracing {len(waypoints)} waypoints")
 
@@ -219,7 +268,7 @@ class ShapeTracerNode(Node):
         # vertex; approach it with a free-space plan since the arm may be
         # coming from anywhere (e.g. the previous shape's hover point).
         first = waypoints[0]
-        self._plan_and_exec_free(first.position, first.quaternion, f"{shape.name}:approach")
+        self._approach(first, shape.name)
 
         if self.blender is not None:
             # Everything after the approach -- descend, trace, lift -- goes out
@@ -234,6 +283,9 @@ class ShapeTracerNode(Node):
 
     def trace_all(self):
         self.publish_markers()
+        if self.home_on_start:
+            self.get_logger().info("Moving to the ready pose before tracing")
+            self.go_home()
         for shape in self.shapes:
             self.trace_shape(shape)
         self.get_logger().info("All shapes traced.")
