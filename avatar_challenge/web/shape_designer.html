@@ -23,11 +23,11 @@
   --pen-wash:rgba(14,124,139,.10);
   --reach:#4F8A3D;
   --noreach:#C0532B;
-  --noreach-wash:rgba(192,83,43,.13);
+  --noreach-wash:rgba(96,104,116,.30);
   --sing:#B0342F;
-  --sing-wash:rgba(176,52,47,.16);
+  --sing-wash:rgba(198,54,44,.22);
   --marg:#B07A18;
-  --marg-wash:rgba(176,122,24,.11);
+  --marg-wash:rgba(214,158,32,.13);
   --live:#8A3FC0;
   --ax-x:#C6302B;
   --ax-y:#3E8E41;
@@ -307,9 +307,12 @@ label.check input{accent-color:var(--pen)}
             <i style="background:var(--ax-y);margin-left:5px"></i>Y
             <i style="background:var(--ax-z);margin-left:5px"></i>Z</span>
         </div>
-        <p class="hint" style="margin:6px 0 0">Shading is measured: 969 poses swept
-        in the container, scored by manipulability. Near-singular ground is reachable
-        but the arm lurches there.</p>
+        <p class="hint" style="margin:6px 0 0">Shading is measured, not modelled: 969
+        poses swept in the container and scored by manipulability. <b>Only
+        &ldquo;out of reach&rdquo; is refused</b> &mdash; marginal and
+        near-singular are reachable, and the robot will trace them; they just
+        cost more joint motion and move less smoothly. The robot&rsquo;s own IK
+        check decides, this is a guide for placing shapes.</p>
       </section>
 
       <section class="panel">
@@ -707,6 +710,7 @@ function draw(){
   drawPending();
   drawLive();
   drawCompass(w,h);
+  drawKey(w,h);
   drawScaleBar(w,h);
   drawDimensions();
   document.getElementById("stZoom").textContent = view.scale.toFixed(2)+" px/mm";
@@ -766,6 +770,31 @@ function drawCompass(w,h){
   ctx.beginPath(); ctx.arc(cx,cy,2,0,7); ctx.fillStyle=css("--ink-3"); ctx.fill();
   ctx.restore();
   ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+}
+
+/* The shading covers most of the canvas, so it needs a key next to it rather
+   than only in the side panel. The wording matters: three of the four bands are
+   advice, and only one of them will actually be refused. */
+function drawKey(w,h){
+  const rows=[
+    ["--noreach","out of reach",      "refused before the arm moves"],
+    ["--sing",   "near-singular",     "reachable, but the arm lurches"],
+    ["--marg",   "marginal",          "reachable, less comfortable"],
+    ["--reach",  "good",              "clear working area"],
+  ];
+  const x=18, y0=h-118, lh=17;
+  ctx.save();
+  ctx.font='11px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textBaseline="middle";
+  rows.forEach((r,i)=>{
+    const y=y0+i*lh;
+    ctx.fillStyle=css(r[0]);
+    ctx.fillRect(x, y-4, 9, 9);
+    ctx.fillStyle=css("--ink-2"); ctx.fillText(r[1], x+15, y);
+    ctx.fillStyle=css("--ink-3"); ctx.fillText(r[2], x+112, y);
+  });
+  ctx.restore();
+  ctx.textBaseline="alphabetic";
 }
 
 /* A ruler in the corner: without it the grid is just texture and there is no
