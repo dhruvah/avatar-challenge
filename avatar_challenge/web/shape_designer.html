@@ -29,6 +29,9 @@
   --marg:#B07A18;
   --marg-wash:rgba(176,122,24,.11);
   --live:#8A3FC0;
+  --ax-x:#C6302B;
+  --ax-y:#3E8E41;
+  --ax-z:#2B62C6;
   --arm:#93A3AE;
   --arm-joint:#5C6B76;
   --shadow:rgba(17,24,32,.10);
@@ -297,6 +300,9 @@ label.check input{accent-color:var(--pen)}
           <span><i style="background:var(--marg)"></i>marginal</span>
           <span><i style="background:var(--sing)"></i>near-singular</span>
           <span><i style="background:var(--noreach)"></i>unreachable</span>
+          <span style="margin-left:auto"><i style="background:var(--ax-x)"></i>X
+            <i style="background:var(--ax-y);margin-left:5px"></i>Y
+            <i style="background:var(--ax-z);margin-left:5px"></i>Z</span>
         </div>
         <p class="hint" style="margin:6px 0 0">Shading is measured: 969 poses swept
         in the container, scored by manipulability. Near-singular ground is reachable
@@ -464,6 +470,7 @@ function matrixToRpy(R){
     over, `facing` swings which way it leans, `spin` turns the drawing on the
     surface. Composed as Rz(facing)*Rx(tilt)*Rz(spin). */
 function tfsToRpy(tilt, facing, spin){
+  tilt = Number(tilt) || 0; facing = Number(facing) || 0; spin = Number(spin) || 0;
   const Rz=a=>{const c=Math.cos(a*D2R),s=Math.sin(a*D2R);return [[c,-s,0],[s,c,0],[0,0,1]];};
   const Rx=a=>{const c=Math.cos(a*D2R),s=Math.sin(a*D2R);return [[1,0,0],[0,c,-s],[0,s,c]];};
   const mul=(A,B)=>A.map((r,i)=>B[0].map((_,j)=>r.reduce((t,v,k)=>t+A[i][k]*B[k][j],0)));
@@ -515,8 +522,9 @@ let uid = 1;
 
 function newShape(name, verts, pose, opts){
   return Object.assign({
-    id: uid++, name, verts, closed:true, smooth:false, speed:50, tilt:0, facing:0, spin:0,
-    pose: Object.assign({x:300,y:-50,z:250,roll:0,pitch:0,yaw:0}, pose||{})
+    id: uid++, name, verts, closed:true, smooth:false, speed:50,
+    pose: Object.assign({x:300, y:-50, z:250, roll:0, pitch:0, yaw:0,
+                         tilt:0, facing:0, spin:0}, pose||{})
   }, opts||{});
 }
 const sel = () => shapes.find(s => s.id === selId) || null;
@@ -805,6 +813,17 @@ function draw3d(){
       i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); }
     c.stroke();
   }
+  // base-frame axes, CAD convention: X red, Y green, Z blue
+  const AX=0.16;
+  [[[AX,0,0],"--ax-x","X"],[[0,AX,0],"--ax-y","Y"],[[0,0,AX],"--ax-z","Z"]]
+    .forEach(([v,tok,lbl])=>{
+      const o=P([0,0,0]), e=P(v);
+      c.strokeStyle=css(tok); c.lineWidth=2;
+      c.beginPath(); c.moveTo(o[0],o[1]); c.lineTo(e[0],e[1]); c.stroke();
+      c.fillStyle=css(tok); c.font="600 10px ui-monospace, monospace";
+      c.fillText(lbl, e[0]+3, e[1]+3);
+    });
+
   // the arm itself, posed from live joint angles when the robot is connected
   const q = (live.joints && live.joints.length===7) ? live.joints : HOME_Q;
   const ap = armPoints(q);
@@ -832,6 +851,14 @@ function draw3d(){
   c.fillStyle=css("--pen-wash"); c.strokeStyle=css("--pen"); c.lineWidth=1;
   c.beginPath(); corners.forEach((p,i)=>{ const q=P(p); i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); });
   c.closePath(); c.fill(); c.stroke();
+  // the shape plane's own X/Y, so it is obvious which way the drawing runs
+  const AXP=0.05;
+  [[[AXP,0],"--ax-x"],[[0,AXP],"--ax-y"]].forEach(([d,tok])=>{
+    const o=P(toWorld(0,0,s.pose)), e=P(toWorld(d[0]*1000,d[1]*1000,s.pose));
+    c.strokeStyle=css(tok); c.lineWidth=1.6;
+    c.beginPath(); c.moveTo(o[0],o[1]); c.lineTo(e[0],e[1]); c.stroke();
+  });
+
   // outline
   c.strokeStyle=css("--pen"); c.lineWidth=2;
   c.beginPath(); pts.forEach((p,i)=>{ const q=P(p); i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); });
@@ -972,8 +999,12 @@ function syncPanel(){
   document.getElementById("faceRow").classList.toggle("muted", flat);
   document.getElementById("faceNote").textContent =
     flat ? "not applicable while the plane is flat \u2014 use Spin" : "";
+  // pose.roll/pitch/yaw are held in degrees for the UI; the export converts to
+  // radians. Show both so the number in the file is never a surprise.
+  const rd=v=>(v*Math.PI/180).toFixed(4);
   document.getElementById("rpyOut").textContent=
-    `exported rpy: ${s.pose.roll.toFixed(3)}, ${s.pose.pitch.toFixed(3)}, ${s.pose.yaw.toFixed(3)} rad`;
+    `rpy ${s.pose.roll.toFixed(1)}\u00B0, ${s.pose.pitch.toFixed(1)}\u00B0, ${s.pose.yaw.toFixed(1)}\u00B0`
+    + `  \u2192 exported as ${rd(s.pose.roll)}, ${rd(s.pose.pitch)}, ${rd(s.pose.yaw)} rad`;
   // vertex box
   const vb=document.getElementById("vtxBox");
   if(selVtx>0 && selVtx<s.verts.length && !s.smooth){

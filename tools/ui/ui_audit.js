@@ -301,5 +301,50 @@ chk("each disconnected shape starts at (0,0)",
 chk("shapes are exported as separate entries, not merged",
     ex.shapes.length === 2, ex.shapes.length);
 
+// --- orientation defaults (regression) ------------------------------------
+// tilt/facing/spin were once defaulted on the SHAPE rather than the POSE, so a
+// new shape had pose.tilt === undefined. Moving one slider computed
+// tfsToRpy(v, undefined, undefined) -> NaN, and the controls only appeared to
+// work once all three had been touched.
+(() => {
+  shapes = []; selId = null;
+  const s = newShape("fresh", [{x:0,y:0,kind:"line"},{x:50,y:0,kind:"line"},{x:50,y:40,kind:"line"}]);
+  shapes.push(s); selId = s.id; syncPanel();
+  for (const k of ["tilt", "facing", "spin", "roll", "pitch", "yaw", "x", "y", "z"]) {
+    chk(`a new shape's pose defines ${k}`, typeof s.pose[k] === "number", s.pose[k]);
+  }
+  // move ONE control and make sure nothing becomes NaN
+  const t = document.getElementById("oTilt");
+  t.value = "69"; t.oninput({ target: t });
+  chk("tilt alone keeps rpy finite",
+      [s.pose.roll, s.pose.pitch, s.pose.yaw].every(Number.isFinite),
+      [s.pose.roll, s.pose.pitch, s.pose.yaw].join(","));
+  chk("tilt alone actually tilts the plane", Math.abs(s.pose.roll - 69) < 1e-6, s.pose.roll);
+  const w = toWorld(50, 30, s.pose);
+  chk("tilt alone keeps world coordinates finite", w.every(Number.isFinite), w.join(","));
+  // facing alone, from a fresh shape
+  const s2 = newShape("fresh2", [{x:0,y:0,kind:"line"},{x:50,y:0,kind:"line"},{x:50,y:40,kind:"line"}]);
+  shapes.push(s2); selId = s2.id; syncPanel();
+  s2.pose.tilt = 45; applyTfs(s2);
+  const f = document.getElementById("oFace");
+  f.value = "-64"; f.oninput({ target: f });
+  chk("facing alone keeps rpy finite",
+      [s2.pose.roll, s2.pose.pitch, s2.pose.yaw].every(Number.isFinite));
+  chk("facing alone changes the plane", Math.abs(s2.pose.yaw + 64) < 1e-6 || s2.pose.yaw !== 0,
+      s2.pose.yaw);
+  chk("export from a fresh shape has finite rpy",
+      JSON.parse(buildJSON()).shapes.every(sh => sh.start_pose.rpy.every(Number.isFinite)));
+})();
+
+// --- rpy readout must not mislabel units ----------------------------------
+(() => {
+  const s = sel();
+  s.pose.tilt = 90; s.pose.facing = 0; s.pose.spin = 0; applyTfs(s); syncPanel();
+  const txt = document.getElementById("rpyOut").textContent;
+  const exported = JSON.parse(buildJSON()).shapes.slice(-1)[0].start_pose.rpy;
+  chk("readout shows the exported radian value", txt.includes(exported[0].toFixed(4)), txt);
+  chk("readout marks the degree values as degrees", txt.includes("\u00B0"), txt);
+})();
+
 console.log(`\n${checks} checks, ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
