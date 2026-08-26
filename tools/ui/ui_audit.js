@@ -425,5 +425,41 @@ chk("shapes are exported as separate entries, not merged",
       document.getElementById("stSize").textContent);
 })();
 
+// --- Spin must be legible on a canvas that cannot itself rotate ------------
+// The canvas is the plane's own frame, so the drawing never moves when the
+// plane turns. The compass is what makes Spin visible; if it stops tracking,
+// Spin silently looks broken again.
+(() => {
+  shapes = []; selId = null;
+  const sh = newShape("c", [{x:0,y:0,kind:"line"},{x:80,y:0,kind:"line"},{x:80,y:50,kind:"line"}]);
+  shapes.push(sh); selId = sh.id;
+  sh.pose.tilt = 0; sh.pose.facing = 0; sh.pose.spin = 0; applyTfs(sh); syncPanel();
+
+  const before = worldDirInPlane(sh.pose, 0);
+  const pxBefore = JSON.stringify(sh.verts.map(v => mm2px(v.x, v.y)));
+  sh.pose.spin = -81; applyTfs(sh); syncPanel();
+  const after = worldDirInPlane(sh.pose, 0);
+  const pxAfter = JSON.stringify(sh.verts.map(v => mm2px(v.x, v.y)));
+
+  const dot = before[0]*after[0] + before[1]*after[1];
+  const deg = Math.acos(Math.max(-1, Math.min(1, dot))) * 180 / Math.PI;
+  chk("compass turns by the spin angle", Math.abs(deg - 81) < 0.5, deg.toFixed(2));
+  chk("the drawing itself does not move on canvas (it is the plane's frame)",
+      pxBefore === pxAfter);
+  chk("world coordinates DO move with spin", (() => {
+    sh.pose.spin = 0; applyTfs(sh);
+    const w0 = toWorld(50, 30, sh.pose);
+    sh.pose.spin = -81; applyTfs(sh);
+    const w1 = toWorld(50, 30, sh.pose);
+    return Math.hypot(w0[0]-w1[0], w0[1]-w1[1]) > 0.01;
+  })());
+  chk("an edge-on axis yields null rather than NaN", (() => {
+    sh.pose.tilt = 90; applyTfs(sh);
+    return [0,1].every(i => { const d = worldDirInPlane(sh.pose, i);
+      return d === null || d.every(Number.isFinite); });
+  })());
+  chk("the base arrow has a direction", baseDirInPlane(sh.pose) !== null);
+})();
+
 console.log(`\n${checks} checks, ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);

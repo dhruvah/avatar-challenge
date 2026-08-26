@@ -182,7 +182,12 @@ shapes, with the workspace shaded by measured quality.
 ros2 run avatar_challenge designer_server_node.py   # serves it on :8080
 ```
 
-Draw, press **Send to robot**, watch the arm trace it. The page polls
+Draw, press **Send to robot**, watch the arm trace it. A scale bar and live
+bounding-box dimensions keep the size of a path readable.
+
+Note the canvas is the **plane's own frame**, so turning the plane does not move
+the drawing on screen — a compass shows where the world axes and the robot base
+lie from the drawing's point of view, and turns as the plane turns. The page polls
 `/api/progress` and animates the tool path live over your drawing.
 
 If the container does not publish port 8080, `tools/docker_tunnel.py` forwards it
@@ -219,7 +224,7 @@ self-collision. The node's IK preflight remains the authority.
 
 ```bash
 colcon test --packages-select avatar_challenge   # 107 tests
-python3 tools/ui/run_ui_audit.py                 # 94 UI checks
+python3 tools/ui/run_ui_audit.py                 # 99 UI checks
 ```
 
 ### What the trajectory sweep showed

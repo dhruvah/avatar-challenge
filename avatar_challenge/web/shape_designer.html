@@ -289,6 +289,9 @@ label.check input{accent-color:var(--pen)}
           <input type="range" id="oSpin" min="-180" max="180" step="1">
           <input type="number" id="nSpin" min="-180" max="180" step="5">
         </div>
+        <p class="hint" style="margin:4px 0 0">The canvas is the plane&rsquo;s own
+        frame, so Spin turns the plane <em>under</em> your drawing rather than
+        moving it on screen. Watch the compass and the reach shading.</p>
         <p class="note mono" id="rpyOut" style="margin-top:9px"></p>
       </section>
 
@@ -500,6 +503,24 @@ function tiltWord(t){
   return "facing down";
 }
 
+/** Where a world direction points, expressed in the plane's own 2D frame.
+    local = R^T * world, so the local components of world axis i are row i of R. */
+function worldDirInPlane(pose, axis){
+  const R=rotMatrix(pose.roll,pose.pitch,pose.yaw);
+  const v=[R[axis][0], R[axis][1]];
+  const n=Math.hypot(v[0],v[1]);
+  return n<1e-9 ? null : [v[0]/n, v[1]/n];   // null when the axis is edge-on
+}
+/** Direction from the plane's origin toward the robot base, in the plane's frame. */
+function baseDirInPlane(pose){
+  const R=rotMatrix(pose.roll,pose.pitch,pose.yaw);
+  const d=[-pose.x/1000, -pose.y/1000, -pose.z/1000];
+  const v=[R[0][0]*d[0]+R[1][0]*d[1]+R[2][0]*d[2],
+           R[0][1]*d[0]+R[1][1]*d[1]+R[2][1]*d[2]];
+  const n=Math.hypot(v[0],v[1]);
+  return n<1e-9 ? null : [v[0]/n, v[1]/n];
+}
+
 /** Local planar mm -> world metres. */
 function toWorld(mx, my, pose){
   const R = rotMatrix(pose.roll, pose.pitch, pose.yaw);
@@ -685,6 +706,7 @@ function draw(){
   for (const s of shapes) drawShape(s, s.id===selId);
   drawPending();
   drawLive();
+  drawCompass(w,h);
   drawScaleBar(w,h);
   drawDimensions();
   document.getElementById("stZoom").textContent = view.scale.toFixed(2)+" px/mm";
@@ -708,6 +730,42 @@ function drawReachWash(w,h){
       if(q!=="3"){ ctx.fillStyle=fills[q]; ctx.fillRect(px,py,cell,cell); }
     }
   }
+}
+
+/* The canvas is the plane's OWN frame, so rotating the plane cannot move the
+   drawing within it -- Spin would otherwise look like it does nothing. This
+   compass shows where the world axes and the robot base lie from the drawing's
+   point of view, and it turns as the plane turns. */
+function drawCompass(w,h){
+  const pose=activePose();
+  const cx=w-64, cy=64, r=26;
+  ctx.save();
+  ctx.fillStyle=css("--surface"); ctx.strokeStyle=css("--rule"); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(cx,cy,r+11,0,7); ctx.fill(); ctx.stroke();
+  ctx.font='600 9px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textAlign="center"; ctx.textBaseline="middle";
+
+  const arrow=(d,tok,lbl)=>{
+    if(!d) return;                       // axis is edge-on to this plane
+    const ex=cx+d[0]*r, ey=cy-d[1]*r;    // canvas y is inverted
+    ctx.strokeStyle=css(tok); ctx.fillStyle=css(tok); ctx.lineWidth=1.8;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(ex,ey); ctx.stroke();
+    ctx.fillText(lbl, cx+d[0]*(r+7), cy-d[1]*(r+7));
+  };
+  arrow(worldDirInPlane(pose,0), "--ax-x", "X");
+  arrow(worldDirInPlane(pose,1), "--ax-y", "Y");
+  const b=baseDirInPlane(pose);
+  if(b){
+    ctx.setLineDash([3,2]);
+    ctx.strokeStyle=css("--ink-3"); ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+b[0]*r*0.7, cy-b[1]*r*0.7); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle=css("--ink-3");
+    ctx.fillText("base", cx+b[0]*(r+7), cy-b[1]*(r+7));
+  }
+  ctx.beginPath(); ctx.arc(cx,cy,2,0,7); ctx.fillStyle=css("--ink-3"); ctx.fill();
+  ctx.restore();
+  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
 }
 
 /* A ruler in the corner: without it the grid is just texture and there is no
