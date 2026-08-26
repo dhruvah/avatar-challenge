@@ -9,6 +9,11 @@
 #     draws a whole ghost robot at every waypoint, which piles ~20 translucent
 #     arms on top of each other. The executed path is shown as a line instead,
 #     by the Actual tool path display below.
+#   * MotionPlanning's Query Goal State is off. It draws an orange ghost robot
+#     and a six-DoF interactive marker for planning goals by hand, which sits on
+#     top of the arm and has nothing to do with tracing a shape.
+#   * Planning Group is xarm7. The stock file says xarm5, which is a different
+#     robot and leaves the planning panel unable to plan.
 Panels:
 - Class: rviz_common/Displays
   Help Height: 78
@@ -146,8 +151,8 @@ Visualization Manager:
       Goal State Color: 250; 128; 0
       Interactive Marker Size: 0
       Joint Violation Color: 255; 0; 255
-      Planning Group: xarm5
-      Query Goal State: true
+      Planning Group: xarm7
+      Query Goal State: false
       Query Start State: false
       Show Workspace: false
       Start State Alpha: 1
