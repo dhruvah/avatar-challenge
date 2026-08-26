@@ -1,0 +1,271 @@
+"""Designer-server behaviour that is hard to reproduce by hand.
+
+Covers the cases where a mistake is expensive rather than merely visible: a
+rejected design destroying the last good one, two browsers racing to move the
+same arm, and a failed trace reporting success.
+"""
+
+import json
+import os
+import sys
+import threading
+import types
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+# Stub the ROS message packages so this module runs under plain pytest as well
+# as colcon test. The server logic under test touches none of them.
+if "rclpy" not in sys.modules:                                   # pragma: no cover
+    rclpy_mod = types.ModuleType("rclpy")
+    rclpy_mod.ok = lambda: True
+    sys.modules["rclpy"] = rclpy_mod
+    qos = types.ModuleType("rclpy.qos")
+    qos.QoSProfile = lambda **kw: object()
+    qos.DurabilityPolicy = types.SimpleNamespace(TRANSIENT_LOCAL=1)
+    sys.modules["rclpy.qos"] = qos
+    for pkg, cls in (("sensor_msgs", "JointState"), ("std_msgs", "String")):
+        base = types.ModuleType(pkg)
+        msg = types.ModuleType(f"{pkg}.msg")
+        setattr(msg, cls, type(cls, (), {}))
+        base.msg = msg
+        sys.modules[pkg] = base
+        sys.modules[f"{pkg}.msg"] = msg
+
+from avatar_challenge.designer_server import (              # noqa: E402
+    DesignerServer, FAILED, SUCCEEDED, TRACING)
+from avatar_challenge.shapes_io import load_shapes           # noqa: E402
+
+
+GOOD = {"shapes": [{
+    "name": "sq",
+    "vertices": [[0, 0], [0, 0.1], [0.1, 0.1], [0.1, 0]],
+    "closed": True,
+    "start_pose": {"position": [0.3, -0.05, 0.25], "rpy": [0, 0, 0]},
+}]}
+
+
+class FakeLogger:
+    def __init__(self):
+        self.msgs = []
+
+    def info(self, m): self.msgs.append(("info", m))
+    def warn(self, m): self.msgs.append(("warn", m))
+    def error(self, m): self.msgs.append(("error", m))
+    def debug(self, m): pass
+
+
+class FakeNode:
+    """Just enough node for the server to drive."""
+
+    def __init__(self, fail_on=None):
+        self._log = FakeLogger()
+        self.traced = []
+        self.fail_on = fail_on
+        self.markers = 0
+        self.cleared = 0
+        self.shapes = []
+
+    def get_logger(self): return self._log
+    def publish_markers(self): self.markers += 1
+    def clear_actual(self): self.cleared += 1
+    def create_subscription(self, *a, **k): return None
+
+    def trace_shape(self, shape):
+        if self.fail_on and shape.name == self.fail_on:
+            raise RuntimeError(f"[{shape.name}] execution aborted")
+        self.traced.append(shape.name)
+
+
+def make_server(tmp_path, node=None):
+    node = node or FakeNode()
+    srv = DesignerServer(node, page_path=str(tmp_path / "page.html"),
+                         config_path=str(tmp_path / "cfg" / "shapes.json"))
+    return srv, node
+
+
+# --------------------------------------------------------------------------
+# a rejected design must not destroy the last good one
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad", [
+    {"shapes": [{"name": "b", "vertices": [[0.05, 0], [0.1, 0]],
+                 "start_pose": {"position": [0.3, 0, 0.25]}}]},          # not at origin
+    {"shapes": []},                                                       # empty
+    {"nope": 1},                                                          # no shapes key
+    {"shapes": [{"name": "b", "vertices": [[0, 0], [0.1, 0]],
+                 "closed": "false",
+                 "start_pose": {"position": [0.3, 0, 0.25]}}]},           # string bool
+])
+def test_invalid_design_leaves_the_saved_file_untouched(tmp_path, bad):
+    srv, _ = make_server(tmp_path)
+    srv._run(GOOD)
+    saved = open(srv.config_path).read()
+
+    with pytest.raises(Exception):
+        srv._run(bad)
+
+    assert open(srv.config_path).read() == saved, "a rejected design overwrote the good one"
+    assert load_shapes(srv.config_path)[0].name == "sq"
+
+
+def test_no_staging_file_is_left_behind_after_a_rejection(tmp_path):
+    srv, _ = make_server(tmp_path)
+    srv._run(GOOD)
+    with pytest.raises(Exception):
+        srv._run({"shapes": []})
+    leftovers = [f for f in os.listdir(os.path.dirname(srv.config_path))
+                 if f.endswith(".staged")]
+    assert leftovers == []
+
+
+def test_a_valid_design_does_replace_the_file(tmp_path):
+    srv, node = make_server(tmp_path)
+    srv._run(GOOD)
+    second = json.loads(json.dumps(GOOD))
+    second["shapes"][0]["name"] = "renamed"
+    srv._run(second)
+    assert load_shapes(srv.config_path)[0].name == "renamed"
+    assert node.traced == ["sq", "renamed"]
+
+
+# --------------------------------------------------------------------------
+# a failing trace must report failure, and must not continue
+# --------------------------------------------------------------------------
+
+def test_failure_part_way_through_stops_and_does_not_report_success(tmp_path):
+    two = {"shapes": [
+        dict(GOOD["shapes"][0], name="first"),
+        dict(GOOD["shapes"][0], name="second"),
+    ]}
+    node = FakeNode(fail_on="second")
+    srv, _ = make_server(tmp_path, node)
+    with pytest.raises(RuntimeError, match="aborted"):
+        srv._run(two)
+    assert node.traced == ["first"], "the run continued past a failure"
+
+
+@pytest.mark.parametrize("name", [5, {"a": 1}, [], None, ""])
+def test_invalid_names_are_rejected_before_the_arm_moves(tmp_path, name):
+    node = FakeNode()
+    srv, _ = make_server(tmp_path, node)
+    with pytest.raises(ValueError, match="name"):
+        srv._run({"shapes": [dict(GOOD["shapes"][0], name=name)]})
+    assert node.traced == []
+
+
+def _drain(srv):
+    """Run one queued job the way spin() does, without a ROS loop."""
+    job = srv.jobs.get_nowait()
+    try:
+        if job.abandoned:
+            return job
+        try:
+            job.result = srv._run(job.payload)
+        except Exception as exc:                            # noqa: BLE001
+            srv._state, srv._error = FAILED, str(exc)
+            job.result = {"ok": False, "error": str(exc)}
+    finally:
+        with srv._lock:
+            srv._reserved = False
+        job.done.set()
+    return job
+
+
+# --------------------------------------------------------------------------
+# only one trace at a time
+# --------------------------------------------------------------------------
+
+def test_only_one_request_can_reserve_the_robot(tmp_path):
+    """Two browsers pressing Send at once must not both drive the arm."""
+    srv, _ = make_server(tmp_path)
+    first = srv.reserve(GOOD)
+    second = srv.reserve(GOOD)
+    assert first is not None
+    assert second is None, "a second request was accepted while one was pending"
+    assert srv.is_busy()
+
+
+def test_concurrent_reservations_admit_exactly_one(tmp_path):
+    """Race many threads at the same instant through a barrier."""
+    srv, _ = make_server(tmp_path)
+    n = 16
+    barrier = threading.Barrier(n)
+    granted = []
+    lock = threading.Lock()
+
+    def attempt():
+        barrier.wait(timeout=5)
+        job = srv.reserve(GOOD)
+        if job is not None:
+            with lock:
+                granted.append(job)
+
+    threads = [threading.Thread(target=attempt) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+
+    assert len(granted) == 1, f"{len(granted)} of {n} requests were admitted"
+    assert srv.jobs.qsize() == 1
+
+
+def test_reservation_is_released_after_the_worker_runs(tmp_path):
+    srv, node = make_server(tmp_path)
+    job = srv.reserve(GOOD)
+    assert srv.is_busy()
+    _drain(srv)
+    assert not srv.is_busy()
+    assert job.done.is_set()
+    assert node.traced == ["sq"]
+
+    # and the robot can be claimed again
+    assert srv.reserve(GOOD) is not None
+
+
+def test_abandoned_job_never_moves_the_robot(tmp_path):
+    """A request whose client gave up waiting must not execute later."""
+    srv, node = make_server(tmp_path)
+    job = srv.reserve(GOOD)
+    srv.abandon(job)
+    _drain(srv)
+    assert node.traced == [], "a timed-out request still drove the arm"
+    assert not srv.is_busy()
+
+
+# --------------------------------------------------------------------------
+# progress must not claim success after a failure
+# --------------------------------------------------------------------------
+
+def test_progress_reports_failure_not_one_hundred_percent(tmp_path):
+    node = FakeNode(fail_on="sq")
+    srv, _ = make_server(tmp_path, node)
+    srv.reserve(GOOD)
+    _drain(srv)
+    snap = srv.progress_snapshot()
+    assert snap["state"] == FAILED
+    assert snap["fraction"] < 1.0, "a failed trace reported 100%"
+    assert snap["error"] and "aborted" in snap["error"]
+    assert snap["tracing"] is False
+
+
+def test_progress_reaches_one_hundred_percent_only_on_success(tmp_path):
+    srv, _ = make_server(tmp_path)
+    assert srv.progress_snapshot()["state"] == "idle"
+    assert srv.progress_snapshot()["fraction"] == 0.0
+    srv.reserve(GOOD)
+    _drain(srv)
+    snap = srv.progress_snapshot()
+    assert snap["state"] == SUCCEEDED
+    assert snap["fraction"] == 1.0
+
+
+def test_failure_state_survives_for_the_ui_to_read(tmp_path):
+    node = FakeNode(fail_on="sq")
+    srv, _ = make_server(tmp_path, node)
+    srv.reserve(GOOD)
+    _drain(srv)
+    for _ in range(3):
+        assert srv.progress_snapshot()["state"] == FAILED

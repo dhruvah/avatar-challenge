@@ -4,11 +4,13 @@ ROS 2 (Humble) software that commands a simulated UFactory xArm 7 to trace a lis
 of 2D shapes in the air, each on its own 3D plane. Built and verified inside the
 supplied `avatarrobotics/ros-humble-xarm:20250602` container.
 
-> **No browser or web service is needed to evaluate this.**
-> `start.launch.py` loads the included `config/shapes.json` and traces it
-> automatically. An optional visual designer lives on the
-> [`demo-designer`](https://github.com/dhruvah/xarm-shape-tracer/tree/demo-designer)
-> branch; it exports the same JSON this branch consumes.
+> **You are on the `demo-designer` branch** — the core tracer plus an optional
+> browser designer. The lean submission branch is
+> [`master`](https://github.com/dhruvah/xarm-shape-tracer/tree/master); the
+> robot code here is identical to it, with the designer added on top.
+>
+> `start.launch.py` works exactly as it does on `master` and needs no browser.
+> `designer.launch.py` starts the same stack with the web designer instead.
 
 ---
 
@@ -120,33 +122,47 @@ Both tessellate into `arc_segments` (default 16) straight sub-segments.
 
 ---
 
-## 3. Optional: the visual designer
+## 3. The visual designer
 
-The required evaluation path does not need it. On the
-[`demo-designer`](https://github.com/dhruvah/xarm-shape-tracer/tree/demo-designer)
-branch there is a browser designer for authoring the same JSON: draw on a
-millimetre grid, see the workspace shaded by measured manipulability, press
-**Send to robot**, and watch the trace animate live.
+Draw on a millimetre grid, see the workspace shaded by measured manipulability,
+press **Send to robot**, and watch the trace animate live over your drawing.
 
 ![The shape designer](docs/shape_designer.png)
 
 ```bash
-git checkout demo-designer
-colcon build --packages-select avatar_challenge && source install/setup.bash
-
 ros2 launch avatar_challenge designer.launch.py    # MoveIt + RViz + the designer
 # or, against an already-running stack:
 ros2 run avatar_challenge designer_server_node.py
 ```
 
-Then open <http://localhost:8080>. If the container does not publish port 8080,
-`tools/docker_tunnel.py` forwards it over `docker exec` (loopback only).
+Then open <http://localhost:8080>.
 
-**Copy shapes.json** in the designer produces exactly the format documented
-above — paste it into `config/shapes.json` on either branch and
-`start.launch.py` will trace it. Both branches run the same tracing engine and
-the same schema; the designer is an authoring layer, not a second
-implementation. `start.launch.py` works unchanged on both.
+The server binds **loopback only** by default — it moves a robot, and should not
+be reachable from the network without someone deciding so. Override with
+`-p bind_address:=0.0.0.0` if you mean it. If the container does not publish
+port 8080, `tools/docker_tunnel.py` forwards it over `docker exec`, also
+loopback only.
+
+**Copy shapes.json** produces exactly the format documented above — paste it
+into `config/shapes.json` on either branch and `start.launch.py` traces it. The
+designer is an authoring layer, not a second implementation: `shape_tracer_node.py`
+here is byte-identical to the one on `master`.
+
+Designs sent from the browser are kept in `$ROS_HOME/avatar_challenge/`, not in
+the installed package share, so a rebuild does not discard them and a read-only
+install directory is not a problem. A design that fails validation never
+replaces the last good one.
+
+### What the designer adds
+
+| Component | Purpose |
+|---|---|
+| `web/shape_designer.html` | The page: drawing, workspace shading, live trace, arm view |
+| `designer_server.py` | HTTP service; owns everything browser-facing |
+| `scripts/designer_server_node.py` | Entry point |
+| `launch/designer.launch.py` | The sim stack with the designer instead of a one-shot trace |
+| `tools/docker_tunnel.py` | Forwards a port into a running container |
+| `tools/ui/run_ui_audit.py` | 99 checks against the page's real handlers |
 
 ---
 
@@ -243,8 +259,16 @@ solution and still sit where small tool motions demand large joint speeds.
 ```bash
 colcon build --packages-select avatar_challenge
 colcon test --packages-select avatar_challenge
-colcon test-result --all --verbose      # 130 tests
+colcon test-result --all --verbose      # 4 suites, 146 tests
+
+python3 tools/ui/run_ui_audit.py        # 99 UI checks, no browser needed
 ```
+
+The designer suite covers the parts that are expensive to get wrong: two
+simultaneous submissions admit exactly one (barrier-raced, the loser gets HTTP
+409), a request whose client timed out never executes afterwards, an invalid
+payload leaves the previously saved design untouched, and a failed trace reports
+`failed` with its error rather than 100%.
 
 Tests need neither ROS nor a robot — `geometry.py`, `shapes_io.py` and
 `kinematics.py` import only numpy and the standard library, which is why the
@@ -303,11 +327,17 @@ avatar_challenge/
     shape_tracer_node.py  preflight, motion strategy, RViz output
   config/shapes.json      the four sample shapes
   launch/start.launch.py  MoveIt + RViz + xarm_planner + the tracer
-  test/                   130 tests, no robot required
+  test/                   146 tests, no robot required
+  web/shape_designer.html the designer page
+  launch/designer.launch.py
 tools/
   verify_path.py          records link_eef from TF, measures deviation from target
   trajectory_suite.py     plans a batch of shapes and scores execution quality
   workspace_quality.py    the manipulability sweep behind the numbers above
+  path_fidelity.py        executed vs requested path, via the designer API
+  lift_check.py           confirms the pen lifts between disconnected shapes
+  docker_tunnel.py        loopback port forward into a running container
+  ui/run_ui_audit.py      drives the page's real handlers against a fake DOM
 ```
 
 Generated sweep outputs are not committed; re-run the tools to reproduce them.
