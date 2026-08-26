@@ -243,7 +243,7 @@ solution and still sit where small tool motions demand large joint speeds.
 ```bash
 colcon build --packages-select avatar_challenge
 colcon test --packages-select avatar_challenge
-colcon test-result --all --verbose      # 127 tests
+colcon test-result --all --verbose      # 130 tests
 ```
 
 Tests need neither ROS nor a robot — `geometry.py`, `shapes_io.py` and
@@ -303,7 +303,7 @@ avatar_challenge/
     shape_tracer_node.py  preflight, motion strategy, RViz output
   config/shapes.json      the four sample shapes
   launch/start.launch.py  MoveIt + RViz + xarm_planner + the tracer
-  test/                   127 tests, no robot required
+  test/                   130 tests, no robot required
 tools/
   verify_path.py          records link_eef from TF, measures deviation from target
   trajectory_suite.py     plans a batch of shapes and scores execution quality
