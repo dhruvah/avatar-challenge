@@ -1,12 +1,46 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from uf_ros_lib.moveit_configs_builder import MoveItConfigsBuilder
 
 
-def generate_launch_description():
+def moveit_parameters(context):
+    """The parameters RViz needs to show MoveIt's planned-path displays.
+
+    RViz's MotionPlanning plugin loads the robot model itself, so it needs the
+    semantic description and kinematics as its own parameters -- without them it
+    logs "Unable to parse SRDF" and the planned trajectory never appears. The
+    stock MoveIt launch passes these to the RViz it starts; we start our own, so
+    we have to build the same configuration here.
+    """
+    config = MoveItConfigsBuilder(
+        context=context,
+        dof=7,
+        robot_type="xarm",
+        prefix="",
+        hw_ns="xarm",
+        limited=True,
+        attach_to="world",
+        attach_xyz='"0 0 0"',
+        attach_rpy='"0 0 0"',
+    ).to_moveit_configs().to_dict()
+    return {
+        key: config[key]
+        for key in (
+            "robot_description",
+            "robot_description_semantic",
+            "robot_description_kinematics",
+            "robot_description_planning",
+            "planning_pipelines",
+        )
+        if key in config
+    }
+
+
+def launch_setup(context, *args, **kwargs):
     xarm_moveit_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
@@ -31,6 +65,8 @@ def generate_launch_description():
                 [FindPackageShare("avatar_challenge"), "rviz", "shape_tracer.rviz"]
             ),
         ],
+        parameters=[moveit_parameters(context)],
+        remappings=[("/tf", "tf"), ("/tf_static", "tf_static")],
     )
 
     # xarm_planner/launch/_robot_planner.launch.py starts xarm_planner_node,
@@ -76,11 +112,13 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription(
-        [
-            xarm_moveit_launch,
-            rviz_node,
-            xarm_planner_launch,
-            designer_node,
-        ]
-    )
+    return [
+        xarm_moveit_launch,
+        rviz_node,
+        xarm_planner_launch,
+        designer_node,
+    ]
+
+
+def generate_launch_description():
+    return LaunchDescription([OpaqueFunction(function=launch_setup)])
