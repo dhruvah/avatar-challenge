@@ -152,13 +152,24 @@ class DesignerServer:
                 job.done.set()
 
     def _run(self, payload):
-        """Persist what the browser sent, then trace it."""
-        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-        with open(self.config_path, "w") as f:
-            json.dump(payload, f, indent=2)
+        """Validate what the browser sent, then persist it, then trace it.
 
-        # load_shapes does the real validation and raises with a precise message
-        shapes = self.node.reload(self.config_path)
+        Order matters: writing first would let a rejected design destroy the
+        last good one. The payload is staged beside the target, validated by the
+        real loader, and only then moved into place -- os.replace is atomic, so
+        the file on disk is always a design that parsed.
+        """
+        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+        staged = self.config_path + ".staged"
+        with open(staged, "w") as f:
+            json.dump(payload, f, indent=2)
+        try:
+            # load_shapes does the real validation and raises with a precise message
+            shapes = self.node.reload(staged)
+        except Exception:
+            os.unlink(staged)
+            raise
+        os.replace(staged, self.config_path)
         names = [s.name for s in shapes]
         self.node.publish_markers()
         self._httpd.total = len(shapes)

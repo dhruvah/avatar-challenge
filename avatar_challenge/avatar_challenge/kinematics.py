@@ -137,10 +137,20 @@ class Chain:
 
     # -- singularity measures --------------------------------------------------
     def manipulability(self, q) -> float:
-        """Yoshikawa measure: sqrt(det(J J^T)). Zero at a singularity."""
+        """Yoshikawa measure of the full 6-D twist ellipsoid. Zero at a singularity.
+
+        sqrt(det(J J^T)) is the redundant form and needs at least as many joints
+        as task dimensions; with fewer, J J^T is rank-deficient by construction
+        and its determinant is identically zero, which says nothing about the
+        pose. The Gram matrix J^T J is the right object there.
+
+        Note this scores the *whole* twist. An arm with fewer than 6 joints can
+        be singular in position while still able to rotate, so for such chains
+        the positional sub-Jacobian is usually the quantity of interest.
+        """
         J = self.jacobian(q)
-        val = np.linalg.det(J @ J.T)
-        return float(np.sqrt(max(val, 0.0)))
+        M = J @ J.T if J.shape[0] <= J.shape[1] else J.T @ J
+        return float(np.sqrt(max(np.linalg.det(M), 0.0)))
 
     def sigma_min(self, q) -> float:
         """Smallest singular value of J -- the direct distance to rank loss."""

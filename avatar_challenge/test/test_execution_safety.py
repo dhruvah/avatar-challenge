@@ -29,13 +29,30 @@ if "rclpy" not in sys.modules:                                   # pragma: no co
     action_mod = types.ModuleType("rclpy.action")
     action_mod.ActionClient = object
     sys.modules["rclpy.action"] = action_mod
-    for name, attrs in [("moveit_msgs.action", ["ExecuteTrajectory"]),
-                        ("moveit_msgs.srv", ["GetCartesianPath"])]:
-        mod = types.ModuleType(name)
-        for a in attrs:
-            setattr(mod, a, type(a, (), {"Goal": type("Goal", (), {}),
-                                         "Request": type("Request", (), {})}))
-        sys.modules[name] = mod
+    class _CartesianRequest:
+        """Mirrors the fields BlendedPathExecutor.plan() populates."""
+
+        def __init__(self):
+            self.header = types.SimpleNamespace(frame_id="")
+            self.group_name = ""
+            self.link_name = ""
+            self.waypoints = []
+            self.max_step = 0.0
+            self.jump_threshold = 0.0
+            self.avoid_collisions = False
+            self.start_state = types.SimpleNamespace(
+                is_diff=False, joint_state=types.SimpleNamespace(name=[], position=[]))
+
+    class _Goal:
+        def __init__(self):
+            self.trajectory = None
+
+    action_msgs = types.ModuleType("moveit_msgs.action")
+    action_msgs.ExecuteTrajectory = type("ExecuteTrajectory", (), {"Goal": _Goal})
+    sys.modules["moveit_msgs.action"] = action_msgs
+    srv_msgs = types.ModuleType("moveit_msgs.srv")
+    srv_msgs.GetCartesianPath = type("GetCartesianPath", (), {"Request": _CartesianRequest})
+    sys.modules["moveit_msgs.srv"] = srv_msgs
     sys.modules.setdefault("moveit_msgs", types.ModuleType("moveit_msgs"))
 
 from avatar_challenge.blended_path import BlendedPathExecutor  # noqa: E402
@@ -165,6 +182,76 @@ def test_retime_is_monotonic_and_preserves_ordering():
     BlendedPathExecutor.retime(traj, 0.3)
     ts = [p.t for p in traj.joint_trajectory.points]
     assert all(b > a for a, b in zip(ts, ts[1:]))
+
+
+@pytest.mark.parametrize("total,speed", [
+    (0.2999999999, 0.3),      # rounds to exactly 1.0 s
+    (0.1, 0.1), (0.5, 0.5), (0.0999999999, 0.1),
+])
+def test_retime_never_emits_nanosec_at_or_above_one_second(total, speed):
+    """builtin_interfaces requires nanosec < 1e9; rounding can land on 1e9."""
+    traj = _traj([0.0, total])
+    expected_total = traj.joint_trajectory.points[-1].t
+    BlendedPathExecutor.retime(traj, speed)
+    for p in traj.joint_trajectory.points:
+        assert 0 <= p.time_from_start.nanosec < 1_000_000_000, p.time_from_start
+        assert p.time_from_start.sec >= 0
+    last = traj.joint_trajectory.points[-1]
+    # compare against the timestamp the fixture actually stored, since building
+    # it already quantised to whole nanoseconds
+    assert last.t == pytest.approx(expected_total / speed, abs=2e-9)
+
+
+def test_retime_carry_normalises_to_whole_seconds():
+    traj = _traj([0.0, 0.2999999999])
+    BlendedPathExecutor.retime(traj, 0.3)
+    last = traj.joint_trajectory.points[-1].time_from_start
+    assert (last.sec, last.nanosec) == (1, 0)
+
+
+# --- planning guards ---------------------------------------------------------
+
+class FakePlanResult:
+    def __init__(self, fraction, err=1):
+        self.fraction = fraction
+        self.solution = _traj([0.0, 1.0])
+        self.error_code = types.SimpleNamespace(val=err)
+
+
+def _planner(result, min_fraction=0.99):
+    node = FakeNode()
+    ex = BlendedPathExecutor.__new__(BlendedPathExecutor)
+    ex._node = node
+    ex._timeout = 0.01
+    ex._max_step = 0.005
+    ex._min_fraction = min_fraction
+    sent = []
+    ex._plan_cli = types.SimpleNamespace(call_async=lambda req: FakeFuture(result))
+    ex._exec_cli = types.SimpleNamespace(
+        send_goal_async=lambda goal: sent.append(goal) or FakeFuture(HangingGoalHandle()))
+    return ex, sent
+
+
+@pytest.mark.parametrize("fraction", [0.0, 0.5, 0.9, 0.98, 0.995])
+def test_partial_cartesian_path_is_rejected(fraction):
+    """A path that is 99.5% complete still misses part of the shape."""
+    ex, sent = _planner(FakePlanResult(fraction), min_fraction=0.999)
+    with pytest.raises(RuntimeError, match="only"):
+        ex.plan(poses=[object()], description="s:blended")
+    assert sent == [], "a truncated plan must never reach the controller"
+
+
+def test_missing_plan_response_is_rejected():
+    ex, sent = _planner(None)
+    with pytest.raises(RuntimeError, match="timed out"):
+        ex.plan(poses=[object()], description="s:blended")
+    assert sent == []
+
+
+def test_complete_path_is_accepted():
+    ex, _ = _planner(FakePlanResult(1.0))
+    traj, fraction = ex.plan(poses=[object()], description="s:blended")
+    assert fraction == 1.0 and traj is not None
 
 
 def test_full_speed_retime_is_a_no_op():

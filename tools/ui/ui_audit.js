@@ -10,6 +10,9 @@ function mkCtx() {
   const c = {
     calls: { moveTo: 0, lineTo: 0, arc: 0, fillRect: 0, stroke: 0 },
     save: noop, restore: noop, setTransform: noop, clearRect: noop,
+    strokeRect: noop, rect: noop, clip: noop, ellipse: noop, quadraticCurveTo: noop,
+    bezierCurveTo: noop, textAlign: "left", textBaseline: "alphabetic", font: "",
+    lineCap: "butt", lineJoin: "miter", lineWidth: 1, globalAlpha: 1,
     beginPath: noop, closePath: noop, fill: noop, setLineDash: noop,
     createLinearGradient: () => ({ addColorStop: noop }),
     measureText: () => ({ width: 10 }), fillText: noop, strokeText: noop,
@@ -379,6 +382,47 @@ chk("shapes are exported as separate entries, not merged",
   importJSON(FIXTURE);
   chk("controls come back when a shape is selected",
       document.getElementById("sName").disabled === false);
+})();
+
+// --- curve interiors are checked, not just the vertices --------------------
+(() => {
+  shapes = []; selId = null;
+  // an arc whose endpoints are fine but which bulges far out of reach
+  const sh = newShape("bulge", [
+    { x: 0, y: 0, kind: "line" },
+    { x: 100, y: 0, kind: "arc", cx: 50, cy: 0, cw: false },
+  ], { x: 600, y: 0, z: 300, tilt: 0, facing: 0, spin: 0 });
+  shapes.push(sh); selId = sh.id;
+  const vertClasses = sh.verts.map(v => worldQuality(toWorld(v.x, v.y, sh.pose), sh.pose.tilt));
+  const allClasses = flatten(sh).map(p => worldQuality(toWorld(p[0], p[1], sh.pose), sh.pose.tilt));
+  chk("tessellated sampling sees at least as many points as the vertices",
+      allClasses.length > vertClasses.length, `${allClasses.length} vs ${vertClasses.length}`);
+  const worstVerts = vertClasses.slice().sort()[0];
+  const worstAll = allClasses.slice().sort()[0];
+  chk("outline sampling is never more optimistic than vertex sampling",
+      worstAll <= worstVerts, `${worstAll} vs ${worstVerts}`);
+  syncPanel();   // must not throw for a shape built from segments
+})();
+
+// --- measurements ----------------------------------------------------------
+(() => {
+  shapes = []; selId = null;
+  const sq = newShape("m", [
+    { x: 0, y: 0, kind: "line" }, { x: 100, y: 0, kind: "line" },
+    { x: 100, y: 60, kind: "line" }, { x: 0, y: 60, kind: "line" }]);
+  shapes.push(sq); selId = sq.id;
+  const m = measure(sq);
+  chk("bounding box width is right", Math.abs(m.w - 100) < 1e-9, m.w);
+  chk("bounding box height is right", Math.abs(m.h - 60) < 1e-9, m.h);
+  chk("closed perimeter is right", Math.abs(m.len - 320) < 1e-6, m.len);
+  sq.closed = false;
+  chk("open path length drops the closing edge",
+      Math.abs(measure(sq).len - 260) < 1e-6, measure(sq).len);
+  sq.closed = true;
+  draw();          // the size readout is refreshed as part of rendering
+  chk("status bar reports the size",
+      /100 \u00D7 60 mm/.test(document.getElementById("stSize").textContent),
+      document.getElementById("stSize").textContent);
 })();
 
 console.log(`\n${checks} checks, ${fails} failure(s)`);

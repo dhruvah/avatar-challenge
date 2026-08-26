@@ -486,6 +486,14 @@ class ShapeTracerNode(Node):
 
     def publish_markers(self):
         marker_array = MarkerArray()
+        # The publisher is latched, so a shorter design would otherwise leave
+        # the previous run's extra outlines on screen forever. DELETEALL first,
+        # in the same message, so a late subscriber still gets a clean set.
+        clear = Marker()
+        clear.header.frame_id = "link_base"
+        clear.ns = "shape_tracer_targets"
+        clear.action = Marker.DELETEALL
+        marker_array.markers.append(clear)
         for i, shape in enumerate(self.shapes):
             waypoints = build_shape_waypoints(
                 vertices=shape.vertices,

@@ -350,6 +350,7 @@ label.check input{accent-color:var(--pen)}
     <span>cursor <b id="stCur">&mdash;</b></span><span class="sep"></span>
     <span>world <b id="stWorld">&mdash;</b></span><span class="sep"></span>
     <span id="stReach">&mdash;</span><span class="sep"></span>
+    <span>size <b id="stSize">&mdash;</b></span><span class="sep"></span>
     <span>scale <b id="stZoom">&mdash;</b></span>
   </div>
 </div>
@@ -541,6 +542,19 @@ shapes.push(newShape("square_45deg",
   {x:300,y:-50,z:250,yaw:45}));
 selId = shapes[0].id;
 
+/** Size of a shape in the units it was drawn in: bounding box and path length. */
+function measure(sh){
+  const pts=flatten(sh);
+  if(pts.length<2) return null;
+  let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9,len=0;
+  pts.forEach((p,i)=>{
+    mnx=Math.min(mnx,p[0]); mxx=Math.max(mxx,p[0]);
+    mny=Math.min(mny,p[1]); mxy=Math.max(mxy,p[1]);
+    if(i) len+=Math.hypot(p[0]-pts[i-1][0], p[1]-pts[i-1][1]);
+  });
+  return {w:mxx-mnx, h:mxy-mny, len, minx:mnx, maxx:mxx, miny:mny, maxy:mxy};
+}
+
 /* ============================================================
    Canvas / viewport
    ============================================================ */
@@ -671,7 +685,13 @@ function draw(){
   for (const s of shapes) drawShape(s, s.id===selId);
   drawPending();
   drawLive();
+  drawScaleBar(w,h);
+  drawDimensions();
   document.getElementById("stZoom").textContent = view.scale.toFixed(2)+" px/mm";
+  const ms=sel()?measure(sel()):null;
+  document.getElementById("stSize").textContent = ms
+    ? `${ms.w.toFixed(0)} \u00D7 ${ms.h.toFixed(0)} mm \u00B7 path ${ms.len.toFixed(0)} mm`
+    : "\u2014";
   draw3d();
 }
 
@@ -688,6 +708,45 @@ function drawReachWash(w,h){
       if(q!=="3"){ ctx.fillStyle=fills[q]; ctx.fillRect(px,py,cell,cell); }
     }
   }
+}
+
+/* A ruler in the corner: without it the grid is just texture and there is no
+   way to tell a 20 mm shape from a 200 mm one. */
+function drawScaleBar(w,h){
+  // choose a round number of mm that lands near 120 px
+  const nice=[1,2,5,10,20,50,100,200,500,1000];
+  let mm=nice[nice.length-1];
+  for(const n of nice){ if(n*view.scale>=90){ mm=n; break; } }
+  const px=mm*view.scale, x0=18, y0=h-22;
+  ctx.strokeStyle=css("--ink-3"); ctx.fillStyle=css("--ink-3"); ctx.lineWidth=1.4;
+  ctx.beginPath();
+  ctx.moveTo(x0,y0-5); ctx.lineTo(x0,y0); ctx.lineTo(x0+px,y0); ctx.lineTo(x0+px,y0-5);
+  ctx.stroke();
+  ctx.font='600 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textAlign="center";
+  ctx.fillText(mm>=1000?`${mm/1000} m`:`${mm} mm`, x0+px/2, y0-9);
+  ctx.textAlign="left";
+}
+
+/* Live dimensions of the selected shape, drawn against its bounding box. */
+function drawDimensions(){
+  const s=sel(); if(!s) return;
+  const m=measure(s); if(!m) return;
+  const a=mm2px(m.minx,m.maxy), b=mm2px(m.maxx,m.miny);
+  ctx.save();
+  ctx.strokeStyle=css("--rule"); ctx.setLineDash([3,3]); ctx.lineWidth=1;
+  ctx.strokeRect(a[0],a[1],b[0]-a[0],b[1]-a[1]);
+  ctx.setLineDash([]);
+  ctx.fillStyle=css("--ink-3");
+  ctx.font='600 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.textAlign="center";
+  ctx.fillText(`${m.w.toFixed(0)} mm`, (a[0]+b[0])/2, b[1]+15);
+  ctx.save();
+  ctx.translate(a[0]-9, (a[1]+b[1])/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText(`${m.h.toFixed(0)} mm`, 0, 0);
+  ctx.restore();
+  ctx.restore();
+  ctx.textAlign="left";
 }
 
 function drawGrid(w,h){
@@ -709,6 +768,18 @@ function drawGrid(w,h){
 
 function drawShape(s, isSel){
   const pts=flatten(s);
+  // colour the outline itself by the worst ground it passes over, so a curve
+  // bulging into a singular patch is visible even between its vertices
+  if(isSel && pts.length>1){
+    for(let i=1;i<pts.length;i++){
+      const q=worldQuality(toWorld(pts[i][0],pts[i][1],s.pose), s.pose.tilt);
+      if(q==="3") continue;
+      const a=mm2px(pts[i-1][0],pts[i-1][1]), b=mm2px(pts[i][0],pts[i][1]);
+      ctx.strokeStyle = q==="." ? css("--noreach") : q==="1" ? css("--sing") : css("--marg");
+      ctx.lineWidth=5; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    }
+  }
   if(pts.length<2 && s.verts.length<2){ drawVerts(s,isSel); return; }
   ctx.lineJoin="round"; ctx.lineCap="round";
   ctx.strokeStyle = isSel ? css("--pen") : css("--ink-3");
@@ -993,8 +1064,11 @@ function syncPanel(){
   // shape list
   const list=document.getElementById("shapeList"); list.innerHTML="";
   shapes.forEach(sh=>{
-    const cls = sh.verts.map(v=>worldQuality(toWorld(v.x,v.y,sh.pose), sh.pose.tilt))
-                        .sort()[0];   // "." < "1" < "2" < "3"
+    // Sample the *tessellated* outline, not just the vertices the user placed:
+    // an arc or spline can have both ends in good ground and bulge through a
+    // singular patch in between.
+    const cls = flatten(sh).map(p=>worldQuality(toWorld(p[0],p[1],sh.pose), sh.pose.tilt))
+                           .sort()[0];   // "." < "1" < "2" < "3"
     const bad = cls!=="3";
     const el=document.createElement("div");
     el.className="shp"; el.setAttribute("aria-selected", sh.id===selId);

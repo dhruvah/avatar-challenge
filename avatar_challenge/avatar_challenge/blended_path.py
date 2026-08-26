@@ -76,8 +76,15 @@ class BlendedPathExecutor:
         for point in trajectory.joint_trajectory.points:
             total = point.time_from_start.sec + point.time_from_start.nanosec * 1e-9
             scaled = total * k
-            point.time_from_start.sec = int(scaled)
-            point.time_from_start.nanosec = int(round((scaled % 1.0) * 1e9))
+            sec = int(scaled)
+            nsec = int(round((scaled - sec) * 1e9))
+            # rounding can land exactly on a full second; builtin_interfaces
+            # requires nanosec < 1e9, so carry rather than emit an invalid stamp
+            if nsec >= 1_000_000_000:
+                sec += 1
+                nsec -= 1_000_000_000
+            point.time_from_start.sec = sec
+            point.time_from_start.nanosec = nsec
             point.velocities = [v / k for v in point.velocities]
             point.accelerations = [a / (k * k) for a in point.accelerations]
         return trajectory
