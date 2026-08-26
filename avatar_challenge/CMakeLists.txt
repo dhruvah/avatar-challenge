@@ -8,12 +8,14 @@ ament_python_install_package(${PROJECT_NAME})
 
 install(PROGRAMS
   scripts/shape_tracer_node.py
+  scripts/designer_server_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY
   launch
   config
+  web
   rviz
   DESTINATION share/${PROJECT_NAME}
 )
@@ -25,6 +27,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(geometry_tests test/test_geometry.py)
   ament_add_pytest_test(kinematics_tests test/test_kinematics.py)
   ament_add_pytest_test(execution_safety_tests test/test_execution_safety.py)
+  ament_add_pytest_test(designer_server_tests test/test_designer_server.py)
 endif()
 
 ament_package()

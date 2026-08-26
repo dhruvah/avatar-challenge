@@ -4,64 +4,63 @@ ROS 2 (Humble) software that commands a simulated UFactory xArm 7 to trace a lis
 of 2D shapes in the air, each on its own 3D plane. Built and verified inside the
 supplied `avatarrobotics/ros-humble-xarm:20250602` container.
 
-> **No browser or web service is needed to evaluate this.**
-> `start.launch.py` loads the included `config/shapes.json` and traces it
-> automatically. An optional visual designer lives on the
-> [`demo-gui`](https://github.com/dhruvah/avatar-challenge/tree/demo-gui)
-> branch; it exports the same JSON this branch consumes.
+One package, one build, two entry points:
+
+| Command | What it does |
+|---|---|
+| `ros2 launch avatar_challenge start.launch.py` | **The challenge.** Traces `config/shapes.json` automatically. No web server. |
+| `ros2 launch avatar_challenge designer.launch.py` | **Optional demo.** Same robot stack, with a browser designer for authoring shapes. |
+
+Both drive the same tracing engine and the same JSON schema.
 
 ---
 
-## 1. Run it
+## 1. Build
 
 Inside the container:
 
 ```bash
-source /home/dev/xarm_ws/install/setup.bash   # see note below
+# ~/.bashrc sources only dev_ws. xarm_moveit_config, xarm_planner and xarm_msgs
+# live in xarm_ws, so it must be sourced first or the launch cannot find them.
+source /home/dev/xarm_ws/install/setup.bash
+
 cd /home/dev/dev_ws
 colcon build --packages-select avatar_challenge
 source install/setup.bash
+```
+
+## 2. Run the included shapes
+
+```bash
 ros2 launch avatar_challenge start.launch.py
 ```
 
 RViz opens with MoveIt and the arm traces the four sample shapes in
 `config/shapes.json`: a rotated square, a triangle on a **vertical** plane, an
-**arc**-based outline, and a **B-spline** curve traced at 30% speed.
+**arc**-based outline, and a **B-spline** curve at 30% speed. No browser, no HTTP
+server, nothing to configure.
 
-> `~/.bashrc` sources only `dev_ws`. `xarm_moveit_config`, `xarm_planner` and
-> `xarm_msgs` live in `xarm_ws`, so it must be sourced first or the launch fails
-> with *"package 'xarm_moveit_config' not found"*.
+The RViz layout is included, so every display is already on:
+
+| Display | Shows |
+|---|---|
+| Target shapes | Intended outlines, green |
+| Actual tool path | Where the tool really went, orange, one marker per shape |
+| MotionPlanning | The planned trajectory |
+
+The node **holds after tracing** (`hold_after_trace`, default true) because the
+marker publishers are latched — RViz keeps the outlines only while their
+publisher is alive, so exiting immediately would clear the screen at the moment
+there is something to look at. Ctrl-C when finished.
 
 > **Running more than one of these containers at once?** ROS 2 discovery crosses
 > container boundaries, so a second container's `move_group` will answer service
 > calls meant for the first. Give each its own `ROS_DOMAIN_ID`. This looks
 > exactly like a planning bug and is not one.
 
-### What you should see
+## 3. Use your own shapes
 
-RViz opens with `rviz/shape_tracer.rviz`, which already has every display
-switched on — nothing to add by hand:
-
-| Display | Topic | Shows |
-|---|---|---|
-| Target shapes | `shape_tracer/target_shapes` | Intended outlines, green |
-| Actual tool path | `shape_tracer/actual_path` | Where the tool really went, orange |
-| MotionPlanning | `/display_planned_path` | The planned trajectory, with its trail |
-
-Two details that make this visible rather than theoretical:
-
-- **The node holds after tracing** (`hold_after_trace`, default true). The marker
-  publishers are latched, so RViz keeps the outlines only while their publisher
-  is alive; exiting immediately would clear the screen at the moment there is
-  something to look at. Ctrl-C when finished.
-- **Show Trail and Loop Animation are enabled** on the planned path. They are off
-  in the stock MoveIt layout, which makes the trajectory flash once and vanish.
-
----
-
-## 2. Define your own shapes
-
-Edit `config/shapes.json`, or point the node at any other file:
+Edit `config/shapes.json` and rebuild, or point the node at any other file:
 
 ```bash
 ros2 run avatar_challenge shape_tracer_node.py --ros-args \
@@ -93,15 +92,15 @@ This JSON file is the stable robot-facing interface.
 | `start_pose.position` | `[x, y, z]` in **metres**, in the robot's base frame |
 | `start_pose.rpy` | `[roll, pitch, yaw]` in **radians**, REP-103 / tf2 `setRPY` (`Rz·Ry·Rx`) |
 | `closed` | *(default `true`)* return to the first vertex to close the outline |
-| `speed` | *(default `1.0`)* fraction of planned speed, in `(0, 1]` — see below |
+| `speed` | *(default `1.0`)* fraction of planned speed, in `(0, 1]` |
 
 Metres and radians throughout, matching `geometry_msgs/Pose` and the xArm MoveIt
 config, so nothing in the pipeline converts units and nothing can forget to.
 
 **`speed` applies to the blended backend only.** It re-times the Cartesian
 trajectory after planning; `xarm_planner`'s per-edge services expose no speed
-control. With `blend:=false` the node logs a warning naming any shape whose
-`speed` it is ignoring, rather than silently obeying half the file.
+control. With `blend:=false` the node warns, naming every shape whose `speed` it
+is ignoring, rather than silently obeying half the file.
 
 ### Arcs and B-splines
 
@@ -127,39 +126,63 @@ Both tessellate into `arc_segments` (default 16) straight sub-segments.
 | `closed` | `true` | Default for shapes that don't say |
 | `blend` | `true` | One continuous trajectory vs. per-edge moves |
 | `blend_max_step` | `0.005` | Cartesian interpolation step (m) |
-| `hold_after_trace` | `true` | Keep the node alive so RViz retains the markers |
 | `home_on_start` | `true` | Move to the ready pose before tracing |
+| `hold_after_trace` | `true` | Keep the node alive so RViz retains the markers |
 | `service_timeout_sec` | `120.0` | Planner / IK service wait |
 
----
+## 4. Optional: the visual designer
 
-## 3. Optional: the visual designer
+Not needed for the challenge workflow. Same build, different launch:
 
-The required evaluation path does not need it. On the
-[`demo-gui`](https://github.com/dhruvah/avatar-challenge/tree/demo-gui)
-branch there is a browser designer for authoring the same JSON: draw on a
-millimetre grid, see the workspace shaded by measured manipulability, press
-**Send to robot**, and watch the trace animate live.
+```bash
+ros2 launch avatar_challenge designer.launch.py
+```
+
+Then open **<http://localhost:8080>** in a browser **inside the RDP desktop**.
+The server binds to loopback only — it moves a robot, and should not be
+reachable from the network without someone deciding so (`-p bind_address:=0.0.0.0`
+if you mean it). Nothing needs to be published from the container.
 
 ![The shape designer](docs/shape_designer.png)
 
-```bash
-git checkout demo-gui
-colcon build --packages-select avatar_challenge && source install/setup.bash
+Draw on a millimetre grid, watch the workspace shading, press **Send to robot**,
+and the trace animates live over your drawing while the arm moves in RViz.
 
-ros2 launch avatar_challenge designer.launch.py    # MoveIt + RViz + the designer
-# or, against an already-running stack:
-ros2 run avatar_challenge designer_server_node.py
+The shading has four bands and **only one of them blocks anything**:
+
+| Band | Meaning |
+|---|---|
+| Grey — out of reach | No IK solution. Refused before the arm moves. |
+| Red — near-singular | Reachable, but small tool motions need large joint speeds, so the arm lurches. |
+| Amber — marginal | Reachable, less comfortable. |
+| Clear — good | Clean working area. |
+
+It comes from a sweep of 969 poses scored by manipulability, with the bands at
+the measured 5th and 25th percentiles. It is a design-time guide — it assumes the
+tool points along the plane normal and treats reach as a surface of revolution.
+The node's IK preflight is what actually decides.
+
+**Copy shapes.json** produces exactly the format in section 3.
+
+## 5. Both entry points share one engine
+
+`start.launch.py` and `designer.launch.py` bring up the same MoveIt stack, the
+same `xarm_planner`, the same RViz layout and the same `ShapeTracerNode`. They
+differ only in what feeds it shapes:
+
+```
+config/shapes.json ──┐
+                     ├──► ShapeTracerNode ──► MoveIt ──► the arm
+HTTP designer     ───┘
 ```
 
-Then open <http://localhost:8080>. If the container does not publish port 8080,
-`tools/docker_tunnel.py` forwards it over `docker exec` (loopback only).
+Only one runs at a time — they are separate launch files, and neither starts the
+other's frontend. A fix to the geometry, the schema, the preflight or the
+execution path applies to both because there is only one of each.
 
-**Copy shapes.json** in the designer produces exactly the format documented
-above — paste it into `config/shapes.json` on either branch and
-`start.launch.py` will trace it. Both branches run the same tracing engine and
-the same schema; the designer is an authoring layer, not a second
-implementation. `start.launch.py` works unchanged on both.
+If you would rather use a browser on the host than inside the RDP desktop,
+`tools/docker_tunnel.py` forwards the port over `docker exec` (loopback only).
+It is a convenience, not part of the workflow.
 
 ---
 
@@ -254,16 +277,21 @@ solution and still sit where small tool motions demand large joint speeds.
 | Trajectory suite | **240/240** planned, 0 unreachable, 0 failures |
 
 ```bash
-colcon build --packages-select avatar_challenge
 colcon test --packages-select avatar_challenge
-colcon test-result --all --verbose      # 3 suites, 75 tests
+colcon test-result --all --verbose      # 4 suites, 93 tests
 ```
 
-Tests need neither ROS nor a robot — `geometry.py`, `shapes_io.py` and
-`kinematics.py` import only numpy and the standard library, which is why the
-maths lives there rather than in the node. They cover the rotation conventions,
-De Boor evaluation, arc sweep direction across the ±π wraparound, schema
-rejection cases, Cartesian completeness, action cancellation, and re-timing.
+The suite is deliberately small and needs neither ROS nor a robot: the geometry
+properties, three synthetic kinematics checks, and a regression for each bug
+actually found — a partial Cartesian plan never reaching the controller, an
+accepted goal that times out requesting cancellation, re-timed nanoseconds being
+normalised, invalid shape names rejected, two simultaneous designer submissions
+admitting exactly one, invalid input preserving the last valid design, and an
+aborted trace reporting failure rather than 100%.
+
+The trajectory sweep, the browser audit (`tools/ui/run_ui_audit.py`, 99 checks)
+and the TF-based path measurements are tools rather than tests: they need a
+running robot, so `colcon test` does not run them.
 
 ### What the 240-trajectory sweep showed
 
@@ -296,9 +324,10 @@ shapes keep the PDF's geometry (100 mm square, 45° about Z) at a reachable
 - Tool orientation is constant per shape; a plane whose normal varies along the
   path is out of scope.
 - No collision checking *between* shapes beyond MoveIt's own planning scene.
-- The manipulability threshold and the workspace numbers come from a sweep at
-  three tilts (0°, 45°, 90°). They characterise the workspace; they do not
-  certify an individual pose. The IK preflight does that.
+- The workspace sweep covered three tilts (0°, 45°, 90°). It characterises the
+  workspace; it does not certify an individual pose. The IK preflight does that.
+- The designer holds one "smooth" flag per shape, so importing a shape built
+  from several separate B-spline runs merges them — it warns when it does.
 - Measurements were taken in simulation, in this container, on an amd64 image
   under emulation. Timings are indicative; geometric results are not.
 
@@ -314,14 +343,20 @@ avatar_challenge/
     blended_path.py       Cartesian planning, re-timing, execution
     kinematics.py         FK, Jacobian, manipulability from the URDF
     shape_tracer_node.py  preflight, motion strategy, RViz output
+    designer_server.py    HTTP frontend; everything browser-facing lives here
   config/shapes.json      the four sample shapes
-  launch/start.launch.py  MoveIt + RViz + xarm_planner + the tracer
-  rviz/shape_tracer.rviz  RViz layout with the displays already added
-  test/                   75 tests, no robot required
+  launch/                 start.launch.py, designer.launch.py
+  rviz/shape_tracer.rviz  layout with the displays already added
+  web/shape_designer.html the designer page
+  test/                   93 tests, no robot required
 tools/
   verify_path.py          records link_eef from TF, measures deviation from target
+  path_fidelity.py        executed vs requested path, in the units you drew in
   trajectory_suite.py     plans a batch of shapes and scores execution quality
-  workspace_quality.py    the manipulability sweep behind the numbers above
+  workspace_quality.py    the manipulability sweep behind the overlay
+  lift_check.py           confirms the pen lifts between disconnected shapes
+  docker_tunnel.py        optional: forward the port to a host browser
+  ui/run_ui_audit.py      drives the designer's real handlers against a fake DOM
 ```
 
 Generated sweep outputs are not committed; re-run the tools to reproduce them.
