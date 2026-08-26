@@ -36,6 +36,10 @@ from avatar_challenge.shapes_io import load_shapes
 MAX_BODY = 1 << 20          # 1 MB is far more than any plausible shape list
 PROGRESS_PATH_CAP = 400     # points returned per poll; the canvas cannot show more
 TRACE_TIMEOUT = 600.0
+# The tool is "drawing" only while it is on the shape's plane. Travel moves run
+# at the pen-up hover height (lift_height, 3 cm by default), so this separates
+# the drawn outline from the approach without needing a hook into the tracer.
+ON_PLANE_TOLERANCE_M = 0.003
 
 IDLE, TRACING, SUCCEEDED, FAILED = "idle", "tracing", "succeeded", "failed"
 
@@ -165,6 +169,11 @@ class DesignerServer:
         if self._recording and self._frame is not None:
             world = self._chain.fk(q)[:3, 3]
             local = self._frame.rotation.T @ (world - self._frame.position)
+            # Skip the approach and the pen-up lift: otherwise the overlay draws
+            # a line from wherever the arm started, across the canvas, to the
+            # shape -- which reads as part of the drawing.
+            if abs(float(local[2])) > ON_PLANE_TOLERANCE_M:
+                return
             self._path.append([round(float(local[0]) * 1000, 2),
                                round(float(local[1]) * 1000, 2)])
 

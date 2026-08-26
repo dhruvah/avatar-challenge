@@ -155,6 +155,57 @@ def test_invalid_names_are_rejected_before_the_arm_moves(tmp_path, name):
     assert node.traced == []
 
 
+# --------------------------------------------------------------------------
+# only the drawn outline is recorded, not the travel to it
+# --------------------------------------------------------------------------
+
+class _FakeChain:
+    """FK that simply returns whatever world point the test asks for."""
+
+    def __init__(self, point):
+        self.actuated = [types.SimpleNamespace(name="j1")]
+        self.point = point
+
+    def fk(self, q):
+        import numpy as np
+        T = np.eye(4)
+        T[:3, 3] = self.point
+        return T
+
+
+def _joint_msg():
+    return types.SimpleNamespace(name=["j1"], position=[0.0])
+
+
+@pytest.mark.parametrize("height,recorded", [
+    (0.0, True),        # on the plane: drawing
+    (0.001, True),      # sensor noise
+    (0.03, False),      # hover height: travelling
+    (0.20, False),      # mid-approach, far above
+    (-0.05, False),     # below the plane
+])
+def test_only_on_plane_samples_are_recorded(tmp_path, height, recorded):
+    import numpy as np
+    srv, _ = make_server(tmp_path)
+    srv._frame = types.SimpleNamespace(
+        rotation=np.eye(3), position=np.array([0.0, 0.0, 0.0]))
+    srv._recording = True
+    srv._chain = _FakeChain([0.05, 0.02, height])
+    srv._on_joints(_joint_msg())
+    assert (len(srv._path) == 1) is recorded
+
+
+def test_recorded_points_are_the_in_plane_coordinates(tmp_path):
+    import numpy as np
+    srv, _ = make_server(tmp_path)
+    srv._frame = types.SimpleNamespace(
+        rotation=np.eye(3), position=np.array([0.30, -0.05, 0.25]))
+    srv._recording = True
+    srv._chain = _FakeChain([0.35, 0.01, 0.25])
+    srv._on_joints(_joint_msg())
+    assert srv._path == [[50.0, 60.0]]
+
+
 def _drain(srv):
     """Run one queued job the way spin() does, without a ROS loop."""
     job = srv.jobs.get_nowait()
