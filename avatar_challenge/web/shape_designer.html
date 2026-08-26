@@ -24,6 +24,10 @@
   --reach:#4F8A3D;
   --noreach:#C0532B;
   --noreach-wash:rgba(192,83,43,.13);
+  --sing:#B0342F;
+  --sing-wash:rgba(176,52,47,.16);
+  --marg:#B07A18;
+  --marg-wash:rgba(176,122,24,.11);
   --shadow:rgba(17,24,32,.10);
   --focus:#12A0B4;
 }
@@ -127,6 +131,9 @@ label.check input{accent-color:var(--pen)}
 .shp[aria-selected="true"]{background:var(--pen-wash); border-color:var(--pen)}
 .shp .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .shp .ct{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--ink-3)}
+.orow{display:grid; grid-template-columns:46px 1fr 62px; gap:8px; align-items:center}
+.orow .lab{margin:0}
+.orow input[type=number]{padding:4px 6px; font-size:11.5px}
 .link{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-3);
   font-family:"IBM Plex Mono",monospace}
 .link .dot{width:8px; height:8px}
@@ -158,8 +165,11 @@ label.check input{accent-color:var(--pen)}
 }
 .status b{color:var(--ink-2); font-weight:500}
 .status .sep{width:1px; height:12px; background:var(--rule)}
-.ok{color:var(--reach)} .bad{color:var(--noreach)}
+.ok{color:var(--reach)} .warn{color:var(--marg)} .bad{color:var(--noreach)}
 
+.legend{display:flex; flex-wrap:wrap; gap:10px; margin-top:7px; font-size:11px; color:var(--ink-3)}
+.legend span{display:flex; align-items:center; gap:4px}
+.legend i{width:9px; height:9px; border-radius:2px; display:inline-block}
 .hint{font-size:11.5px; color:var(--ink-3); line-height:1.45}
 .note{
   font-size:11px; color:var(--ink-3); line-height:1.45;
@@ -240,48 +250,45 @@ label.check input{accent-color:var(--pen)}
           <div class="field"><span class="lab">Y mm</span><input type="number" id="pY" step="5"></div>
           <div class="field"><span class="lab">Z mm</span><input type="number" id="pZ" step="5"></div>
         </div>
-        <div class="row" style="margin-top:10px; align-items:baseline">
-          <span class="lab">Orientation</span>
-          <div class="chips" id="modeSw" style="margin-left:auto">
-            <button class="chip" data-mode="simple" aria-pressed="true">Simple</button>
-            <button class="chip" data-mode="exact">Exact</button>
-          </div>
-        </div>
+        <div class="row" style="margin-top:10px"><span class="lab">How the plane sits</span></div>
         <div class="chips" id="presets" style="margin:7px 0">
           <button class="chip" data-tilt="0">Table</button>
-          <button class="chip" data-tilt="90">Wall</button>
           <button class="chip" data-tilt="45">Easel</button>
+          <button class="chip" data-tilt="90">Wall</button>
         </div>
 
-        <div id="simpleBox">
-          <div class="field">
-            <span class="lab">Tilt &mdash; <span class="mono" id="tiltVal">0&deg;</span>
-              <span id="tiltWord" style="text-transform:none; letter-spacing:0"></span></span>
-            <input type="range" id="oTilt" min="0" max="180" step="1">
-          </div>
-          <div class="field" style="margin-top:7px">
-            <span class="lab">Facing &mdash; <span class="mono" id="faceVal">0&deg;</span></span>
-            <input type="range" id="oFace" min="-180" max="180" step="1">
-          </div>
-          <div class="field" style="margin-top:7px">
-            <span class="lab">Spin on the surface &mdash; <span class="mono" id="spinVal">0&deg;</span></span>
-            <input type="range" id="oSpin" min="-180" max="180" step="1">
-          </div>
+        <div class="orow">
+          <span class="lab">Tilt</span>
+          <input type="range" id="oTilt" min="0" max="180" step="1">
+          <input type="number" id="nTilt" min="0" max="180" step="5">
         </div>
+        <p class="hint" id="tiltWord" style="margin:2px 0 8px"></p>
 
-        <div id="exactBox" style="display:none">
-          <div class="grid3">
-            <div class="field"><span class="lab">Roll&deg;</span><input type="number" id="pR" step="5"></div>
-            <div class="field"><span class="lab">Pitch&deg;</span><input type="number" id="pP" step="5"></div>
-            <div class="field"><span class="lab">Yaw&deg;</span><input type="number" id="pYaw" step="5"></div>
-          </div>
+        <div class="orow">
+          <span class="lab">Facing</span>
+          <input type="range" id="oFace" min="-180" max="180" step="1">
+          <input type="number" id="nFace" min="-180" max="180" step="5">
         </div>
+        <div class="orow" style="margin-top:6px">
+          <span class="lab">Spin</span>
+          <input type="range" id="oSpin" min="-180" max="180" step="1">
+          <input type="number" id="nSpin" min="-180" max="180" step="5">
+        </div>
+        <p class="note mono" id="rpyOut" style="margin-top:9px"></p>
       </section>
 
       <section class="panel">
         <span class="lab">Preview</span>
         <canvas id="view3d"></canvas>
-        <p class="hint" style="margin:7px 0 0">Drag to orbit. Faint wireframe is the measured reach envelope; red vertices sit outside it.</p>
+        <div class="legend">
+          <span><i style="background:var(--reach)"></i>good</span>
+          <span><i style="background:var(--marg)"></i>marginal</span>
+          <span><i style="background:var(--sing)"></i>near-singular</span>
+          <span><i style="background:var(--noreach)"></i>unreachable</span>
+        </div>
+        <p class="hint" style="margin:6px 0 0">Shading is measured: 969 poses swept
+        in the container, scored by manipulability. Near-singular ground is reachable
+        but the arm lurches there.</p>
       </section>
 
       <section class="panel">
@@ -333,34 +340,43 @@ label.check input{accent-color:var(--pen)}
 <script>
 "use strict";
 /* ============================================================
-   Reach envelope — measured in the challenge container by
-   sweeping /compute_ik over the (radius, z) half-plane with the
-   tool held pointing down. Joint 1 rotates about base Z, so the
-   reachable set is ~a surface of revolution.
-   ============================================================ */
-const ENV = {"r_step":0.04,"z_step":0.04,
- "radii":[0,.04,.08,.12,.16,.2,.24,.28,.32,.36,.4,.44,.48,.52,.56,.6,.64,.68,.72,.76,.8],
- "zs":[0,.04,.08,.12,.16,.2,.24,.28,.32,.36,.4,.44,.48,.52,.56,.6,.64,.68,.72,.76,.8,.84,.88],
- "grid":["000111111111111111000","000111111111111111000","000111111111111111000",
- "000111111111111111100","000111111111111111100","000111111111111111100",
- "000111111111111111100","000111111111111111000","011111111111111111000",
- "111111111111111111000","111111111111111111000","111111111111111110000",
- "111111111111111110000","111111111111111100000","111111111111111000000",
- "111111111111111000000","111111111111110000000","111111111111000000000",
- "111111111110000000000","111111111000000000000","111111000000000000000",
- "000000000000000000000","000000000000000000000"]};
+   Workspace quality map -- measured, not modelled.
 
-/** Reachable at cylindrical radius r, height z (metres). */
-function reachable(r, z){
-  const zi = Math.round(z / ENV.z_step), ri = Math.round(r / ENV.r_step);
-  if (zi < 0 || zi >= ENV.grid.length || ri < 0 || ri >= ENV.radii.length) return false;
-  return ENV.grid[zi][ri] === "1";
+   969 poses were swept in the challenge container: /compute_ik for
+   reachability, then the Yoshikawa manipulability w = sqrt(det(J J^T)) of the
+   returned joint solution, from a URDF-derived Jacobian. Reachable is only half
+   the story -- near a singularity the arm needs huge joint speeds for small tool
+   motions, so it lurches or the controller aborts.
+
+   Buckets come from the measured distribution over 650 reachable poses:
+     .  unreachable        (33% of the swept volume)
+     1  near-singular      w < 0.010   (bottom ~5%, avoid)
+     2  marginal           w < 0.027   (25th percentile)
+     3  good               w >= 0.027
+   ============================================================ */
+const QUAL = {"radii":[0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8],"zs":[0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9],"tilts":[0.0,45.0,90.0],"thresholds":{"poor":0.01,"marginal":0.027},"q":{"0":["...222233333332..","..1212223333333..","..1111122333333..","..1111122333333..","..1111222333333..","..2122223333333..","..1222333333333..","22222333333333...","22233333333333...","33333333333333...","3333333333333....","3333333333332....","333333333332.....","33333333332......","3333333331.......","33333322.........","11211............",".................","................."],"45":["...22333333333...","..1222333333332..","..1212233333333..","..2111233333333..","..1112233333333..","..1122233333333..","..1222333333333..","122223333333332..","22223333333333...","23333333333333...","3333333333333....","3333333333333....","333333333333.....","33333333333......","3333333333.......","333333332........","33333221.........","22221............","................."],"90":["...33333333333...","..223333333333...","..223233333333...","..1122233333333..","..1111233333333..","..1122223333333..","..1122233333333..",".11222333333333..","122223333333332..","22223333333333...","22333333333333...","33333333333333...","3333333333333....","3333333333332....","333333333333.....","33333333333......","3333333332.......","333333322........","3333322.........."]}};
+const QLABEL = {".":"unreachable","1":"near-singular","2":"marginal","3":"good"};
+
+/** Nearest swept tilt plane to the one being edited. */
+function qtilt(tilt){
+  let best=QUAL.tilts[0], d=1e9;
+  for(const t of QUAL.tilts){ const dd=Math.abs(t-tilt); if(dd<d){d=dd;best=t;} }
+  return String(Math.round(best));
 }
-/** Inner/outer reachable radius at height z — for drawing the envelope. */
-function envSpan(zi){
-  const row = ENV.grid[zi]; const lo = row.indexOf("1");
-  if (lo < 0) return null;
-  return [ENV.radii[lo], ENV.radii[row.lastIndexOf("1")]];
+/** Quality class at cylindrical radius r, height z, for a plane at `tilt`. */
+function qualityAt(r, z, tilt){
+  const rows=QUAL.q[qtilt(tilt)];
+  const zi=Math.round(z/(QUAL.zs[1]-QUAL.zs[0]));
+  const ri=Math.round(r/(QUAL.radii[1]-QUAL.radii[0]));
+  if(zi<0||zi>=rows.length||ri<0||ri>=QUAL.radii.length) return ".";
+  return rows[zi][ri];
+}
+function envSpan(zi, tilt){
+  const row=QUAL.q[qtilt(tilt===undefined?0:tilt)][zi];
+  if(!row) return null;
+  let lo=-1, hi=-1;
+  for(let i=0;i<row.length;i++) if(row[i]!=="."){ if(lo<0) lo=i; hi=i; }
+  return lo<0?null:[QUAL.radii[lo], QUAL.radii[hi]];
 }
 
 /* ============================================================
@@ -434,7 +450,8 @@ function toWorld(mx, my, pose){
     pose.z/1000 + R[2][0]*lx + R[2][1]*ly
   ];
 }
-function worldReachable(w){ return reachable(Math.hypot(w[0], w[1]), w[2]); }
+function worldQuality(w, tilt){ return qualityAt(Math.hypot(w[0],w[1]), w[2], tilt); }
+function worldReachable(w, tilt){ return worldQuality(w, tilt) !== "."; }
 
 /* ============================================================
    Model
@@ -446,8 +463,7 @@ let uid = 1;
 
 function newShape(name, verts, pose, opts){
   return Object.assign({
-    id: uid++, name, verts, closed:true, smooth:false, speed:50, oMode:"simple",
-    tilt:0, facing:0, spin:0,
+    id: uid++, name, verts, closed:true, smooth:false, speed:50, tilt:0, facing:0, spin:0,
     pose: Object.assign({x:300,y:-50,z:250,roll:0,pitch:0,yaw:0}, pose||{})
   }, opts||{});
 }
@@ -592,15 +608,17 @@ function draw(){
   draw3d();
 }
 
-/* the centrepiece: shade canvas regions that map outside the envelope */
+/* the centrepiece: shade the canvas by measured workspace quality, so you can
+   see singular ground before you draw on it */
 function drawReachWash(w,h){
   const s=sel(); if(!s) return;
-  const cell=9;
-  ctx.fillStyle=css("--noreach-wash");
+  const cell=9, tilt=s.pose.tilt;
+  const fills={".":css("--noreach-wash"), "1":css("--sing-wash"), "2":css("--marg-wash")};
   for(let py=0; py<h; py+=cell){
     for(let px=0; px<w; px+=cell){
       const [mx,my]=px2mm(px+cell/2, py+cell/2);
-      if(!worldReachable(toWorld(mx,my,s.pose))) ctx.fillRect(px,py,cell,cell);
+      const q=worldQuality(toWorld(mx,my,s.pose), tilt);
+      if(q!=="3"){ ctx.fillStyle=fills[q]; ctx.fillRect(px,py,cell,cell); }
     }
   }
 }
@@ -638,11 +656,13 @@ function drawVerts(s, isSel){
   if(!isSel) return;
   s.verts.forEach((v,i)=>{
     const q=mm2px(v.x,v.y);
-    const ok=worldReachable(toWorld(v.x,v.y,s.pose));
+    const cls=worldQuality(toWorld(v.x,v.y,s.pose), s.pose.tilt);
+    const col = cls==="." ? css("--noreach") : cls==="1" ? css("--sing")
+              : cls==="2" ? css("--marg") : css("--pen");
     ctx.beginPath(); ctx.arc(q[0],q[1], i===selVtx?5.5:4, 0, 7);
-    ctx.fillStyle = ok ? css("--surface") : css("--noreach");
+    ctx.fillStyle = cls==="3" ? css("--surface") : col;
     ctx.fill();
-    ctx.lineWidth=2; ctx.strokeStyle = ok ? css("--pen") : css("--noreach"); ctx.stroke();
+    ctx.lineWidth=2; ctx.strokeStyle = col; ctx.stroke();
     if(i===0){ ctx.beginPath(); ctx.arc(q[0],q[1],8.5,0,7);
       ctx.lineWidth=1.2; ctx.strokeStyle=css("--pen"); ctx.stroke(); }
   });
@@ -670,6 +690,7 @@ function project(p, W, H, sc){
   const xr = p[0]*ca + p[1]*sa, yr = -p[0]*sa + p[1]*ca;
   return [W/2 + yr*sc, H/2 + 40 - (p[2]*ce - xr*se)*sc];
 }
+function s0tilt(){ const s=sel(); return s?s.pose.tilt:0; }
 function draw3d(){
   const v=document.getElementById("view3d"), c=v.getContext("2d");
   const W=v.width/dpr, H=v.height/dpr, sc=Math.min(W,H)/1.75;
@@ -688,7 +709,7 @@ function draw3d(){
   // envelope wireframe (surface of revolution from the measured sweep)
   c.strokeStyle=css("--rule"); c.lineWidth=1;
   const prof=[];
-  for(let zi=0; zi<ENV.grid.length; zi++){ const sp=envSpan(zi); if(sp) prof.push([sp[1], ENV.zs[zi]]); }
+  for(let zi=0; zi<QUAL.zs.length; zi++){ const sp=envSpan(zi, s0tilt()); if(sp) prof.push([sp[1], QUAL.zs[zi]]); }
   for(let k=0;k<8;k++){
     const a=k/8*2*Math.PI;
     c.beginPath();
@@ -696,10 +717,10 @@ function draw3d(){
       i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); });
     c.stroke();
   }
-  for(let zi=0; zi<ENV.grid.length; zi+=4){
-    const sp=envSpan(zi); if(!sp) continue;
+  for(let zi=0; zi<QUAL.zs.length; zi+=4){
+    const sp=envSpan(zi, s0tilt()); if(!sp) continue;
     c.beginPath();
-    for(let i=0;i<=40;i++){ const a=i/40*2*Math.PI, q=P([sp[1]*Math.cos(a), sp[1]*Math.sin(a), ENV.zs[zi]]);
+    for(let i=0;i<=40;i++){ const a=i/40*2*Math.PI, q=P([sp[1]*Math.cos(a), sp[1]*Math.sin(a), QUAL.zs[zi]]);
       i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1]); }
     c.stroke();
   }
@@ -726,9 +747,12 @@ function draw3d(){
   c.stroke();
   // vertices, coloured by reachability
   s.verts.forEach(v=>{
-    const w=toWorld(v.x,v.y,s.pose), q=P(w), ok=worldReachable(w);
+    const w=toWorld(v.x,v.y,s.pose), q=P(w);
+    const cls=worldQuality(w, s.pose.tilt);
     c.beginPath(); c.arc(q[0],q[1],3.4,0,7);
-    c.fillStyle = ok ? css("--reach") : css("--noreach"); c.fill();
+    c.fillStyle = cls==="." ? css("--noreach") : cls==="1" ? css("--sing")
+                : cls==="2" ? css("--marg") : css("--reach");
+    c.fill();
   });
 }
 
@@ -778,7 +802,7 @@ function importJSON(text){
   for(const sh of data.shapes){
     const P=sh.start_pose.position, rpy=sh.start_pose.rpy||[0,0,0];
     const pose={x:P[0]*1000, y:P[1]*1000, z:P[2]*1000,
-                roll:rpy[0]/D2R, pitch:rpy[1]/D2R, yaw:rpy[2]/D2R, oMode:"simple"};
+                roll:rpy[0]/D2R, pitch:rpy[1]/D2R, yaw:rpy[2]/D2R};
     const [t,f,sp]=rpyToTfs(pose.roll,pose.pitch,pose.yaw);
     pose.tilt=Math.round(t); pose.facing=Math.round(f); pose.spin=Math.round(sp);
     const verts=[{x:0,y:0,kind:"line"}]; let smooth=false, splineCount=0;
@@ -828,10 +852,12 @@ function syncPanel(){
   // shape list
   const list=document.getElementById("shapeList"); list.innerHTML="";
   shapes.forEach(sh=>{
-    const bad = sh.verts.some(v=>!worldReachable(toWorld(v.x,v.y,sh.pose)));
+    const cls = sh.verts.map(v=>worldQuality(toWorld(v.x,v.y,sh.pose), sh.pose.tilt))
+                        .sort()[0];   // "." < "1" < "2" < "3"
+    const bad = cls!=="3";
     const el=document.createElement("div");
     el.className="shp"; el.setAttribute("aria-selected", sh.id===selId);
-    el.innerHTML=`<span class="dot" style="background:${bad?"var(--noreach)":"var(--reach)"}"></span>
+    el.innerHTML=`<span class="dot" style="background:${cls==="."?"var(--noreach)":cls==="1"?"var(--sing)":cls==="2"?"var(--marg)":"var(--reach)"}" title="worst point: ${QLABEL[cls]}"></span>
       <span class="nm">${sh.name.replace(/[<>&]/g,"")}</span><span class="ct">${sh.verts.length}</span>
       <button class="btn sm x" title="Delete this shape" aria-label="Delete ${sh.name.replace(/[<>&"]/g,"")}">&times;</button>`;
     el.onclick=()=>{ selId=sh.id; selVtx=-1; syncPanel(); draw(); };
@@ -841,24 +867,15 @@ function syncPanel(){
   if(!s) return;
   const set=(id,val)=>{ const e=document.getElementById(id); if(document.activeElement!==e) e.value=val; };
   set("pX",s.pose.x); set("pY",s.pose.y); set("pZ",s.pose.z);
-  set("pR",s.pose.roll); set("pP",s.pose.pitch); set("pYaw",s.pose.yaw);
-  set("sName",s.name);
-  document.getElementById("sClosed").checked=s.closed;
-  document.getElementById("sSmooth").checked=s.smooth;
-  document.getElementById("sSpeed").value=s.speed;
-  document.getElementById("spdVal").textContent=s.speed+"%";
-  const simple = s.pose.oMode==="simple";
-  document.getElementById("simpleBox").style.display = simple?"block":"none";
-  document.getElementById("exactBox").style.display  = simple?"none":"block";
-  document.querySelectorAll("#modeSw .chip").forEach(c=>
-    c.setAttribute("aria-pressed", (c.dataset.mode==="simple")===simple));
   document.querySelectorAll("#presets .chip").forEach(c=>
-    c.setAttribute("aria-pressed", simple && Math.round(s.pose.tilt)===+c.dataset.tilt));
-  set("oTilt",s.pose.tilt); set("oFace",s.pose.facing); set("oSpin",s.pose.spin);
-  document.getElementById("tiltVal").textContent=Math.round(s.pose.tilt)+"\u00B0";
-  document.getElementById("faceVal").textContent=Math.round(s.pose.facing)+"\u00B0";
-  document.getElementById("spinVal").textContent=Math.round(s.pose.spin)+"\u00B0";
-  document.getElementById("tiltWord").textContent=" \u00B7 "+tiltWord(s.pose.tilt);
+    c.setAttribute("aria-pressed", Math.round(s.pose.tilt)===+c.dataset.tilt));
+  const t=Math.round(s.pose.tilt), f=Math.round(s.pose.facing), sp=Math.round(s.pose.spin);
+  set("oTilt",t); set("nTilt",t);
+  set("oFace",f); set("nFace",f);
+  set("oSpin",sp); set("nSpin",sp);
+  document.getElementById("tiltWord").textContent=tiltWord(s.pose.tilt);
+  document.getElementById("rpyOut").textContent=
+    `exported rpy: ${s.pose.roll.toFixed(3)}, ${s.pose.pitch.toFixed(3)}, ${s.pose.yaw.toFixed(3)} rad`;
   // vertex box
   const vb=document.getElementById("vtxBox");
   if(selVtx>0 && selVtx<s.verts.length && !s.smooth){
@@ -959,10 +976,10 @@ board.addEventListener("pointermove", e=>{
     const w=toWorld(mx,my,s.pose);
     document.getElementById("stWorld").textContent=
       `${(w[0]*1000).toFixed(0)}, ${(w[1]*1000).toFixed(0)}, ${(w[2]*1000).toFixed(0)} mm`;
-    const ok=worldReachable(w);
+    const cls=worldQuality(w, s.pose.tilt);
     const el=document.getElementById("stReach");
-    el.textContent = ok?"in reach":"out of reach";
-    el.className = ok?"ok":"bad";
+    el.textContent = QLABEL[cls];
+    el.className = cls==="3"?"ok" : cls==="2"?"warn" : "bad";
   }
   if(pending){ pending.cur=[mx,my]; draw(); }
   if(!drag) return;
@@ -1062,7 +1079,6 @@ function bindNum(id, get, set){
     const v=parseFloat(el.value); if(Number.isNaN(v)) return; set(s,v); syncPanel(); draw(); });
 }
 bindNum("pX",0,(s,v)=>s.pose.x=v); bindNum("pY",0,(s,v)=>s.pose.y=v); bindNum("pZ",0,(s,v)=>s.pose.z=v);
-bindNum("pR",0,(s,v)=>s.pose.roll=v); bindNum("pP",0,(s,v)=>s.pose.pitch=v); bindNum("pYaw",0,(s,v)=>s.pose.yaw=v);
 /** Push tilt/facing/spin down into the canonical rpy the exporter uses. */
 function applyTfs(s){
   const [r,p,y]=tfsToRpy(s.pose.tilt, s.pose.facing, s.pose.spin);
@@ -1071,28 +1087,15 @@ function applyTfs(s){
 document.querySelectorAll("#presets .chip").forEach(c=>{
   c.onclick=()=>{ const s=sel(); if(!s) return;
     s.pose.tilt=+c.dataset.tilt;
-    if(s.pose.oMode!=="simple"){ s.pose.oMode="simple"; }
     applyTfs(s); syncPanel(); draw(); };
 });
-document.querySelectorAll("#modeSw .chip").forEach(c=>{
-  c.onclick=()=>{ const s=sel(); if(!s) return;
-    const m=c.dataset.mode;
-    if(m==="simple"){
-      // recover sliders from whatever rpy is currently set, so switching back
-      // and forth never silently changes the plane
-      const [t,f,sp]=rpyToTfs(s.pose.roll,s.pose.pitch,s.pose.yaw);
-      s.pose.tilt=Math.round(t); s.pose.facing=Math.round(f); s.pose.spin=Math.round(sp);
-      applyTfs(s);
-    }
-    s.pose.oMode=m; syncPanel(); draw(); };
-});
-["oTilt","oFace","oSpin"].forEach((id,i)=>{
-  document.getElementById(id).oninput=e=>{
-    const s=sel(); if(!s) return;
-    s.pose[["tilt","facing","spin"][i]]=+e.target.value;
-    applyTfs(s); syncPanel(); draw();
-  };
-});
+[["oTilt","nTilt","tilt"],["oFace","nFace","facing"],["oSpin","nSpin","spin"]]
+  .forEach(([slider,number,key])=>{
+    const set=v=>{ const s=sel(); if(!s||Number.isNaN(v)) return;
+      s.pose[key]=v; applyTfs(s); syncPanel(); draw(); };
+    document.getElementById(slider).oninput=e=>set(+e.target.value);
+    document.getElementById(number).oninput=e=>set(parseFloat(e.target.value));
+  });
 document.getElementById("sName").addEventListener("input",e=>{
   const s=sel(); if(s){ s.name=e.target.value||"shape"; syncPanel(); }});
 document.getElementById("sClosed").onchange=e=>{ const s=sel(); if(s){s.closed=e.target.checked; syncPanel(); draw();} };

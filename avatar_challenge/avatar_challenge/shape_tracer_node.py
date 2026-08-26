@@ -10,14 +10,23 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from geometry_msgs.msg import Pose, Point, PoseStamped
+from moveit_msgs.msg import DisplayTrajectory
 from moveit_msgs.srv import GetPositionIK
 from sensor_msgs.msg import JointState
+from std_msgs.msg import String
 from visualization_msgs.msg import Marker, MarkerArray
 from xarm_msgs.srv import PlanPose, PlanSingleStraight, PlanExec, PlanJoint
 
 from avatar_challenge.blended_path import BlendedPathExecutor
 from avatar_challenge.geometry import build_shape_waypoints, Waypoint
+from avatar_challenge.kinematics import Chain
 from avatar_challenge.shapes_io import load_shapes, ShapeDef
+
+
+# Below this Yoshikawa measure the arm is close enough to a singularity that
+# small tool motions need large joint speeds. Calibrated from a workspace sweep
+# -- see tools/workspace_quality.py and the README.
+SINGULARITY_WARN = 0.010
 
 
 class IKServiceError(RuntimeError):
@@ -71,11 +80,21 @@ class ShapeTracerNode(Node):
         self.joint_plan_cli = self.create_client(PlanJoint, "xarm_joint_plan")
         self.ik_cli = self.create_client(GetPositionIK, "/compute_ik")
         # Latched: RViz usually subscribes after the node has already published.
+        latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.marker_pub = self.create_publisher(
-            MarkerArray,
-            "shape_tracer/target_shapes",
-            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
-        )
+            MarkerArray, "shape_tracer/target_shapes", latched)
+        # RViz's MotionPlanning display animates whatever appears here.
+        self.display_pub = self.create_publisher(
+            DisplayTrajectory, "/display_planned_path", 1)
+        # Where the tool actually went, computed from joint states with our own
+        # FK, so target and actual can be compared in one RViz view.
+        self.actual_pub = self.create_publisher(
+            MarkerArray, "shape_tracer/actual_path", latched)
+
+        self._chain = None
+        self._recording = False
+        self._actual = []
+        self.create_subscription(String, "/robot_description", self._on_urdf, latched)
 
         for name, cli in [
             ("xarm_pose_plan", self.pose_plan_cli),
@@ -183,9 +202,28 @@ class ShapeTracerNode(Node):
 
     # -- robot state ------------------------------------------------------------
 
+    def _on_urdf(self, msg: String):
+        if self._chain is not None:
+            return
+        try:
+            self._chain = Chain.from_urdf(msg.data)
+            self.get_logger().info(
+                f"Kinematic chain loaded ({len(self._chain.actuated)} actuated joints); "
+                f"actual-path overlay and singularity checks enabled"
+            )
+        except Exception as exc:  # noqa: BLE001 - overlay is optional, never fatal
+            self.get_logger().warn(f"could not parse /robot_description: {exc}")
+
     def _on_joint_state(self, msg: JointState):
         if msg.name and msg.position:
             self._joint_state = msg
+            if self._recording and self._chain is not None:
+                idx = {n: i for i, n in enumerate(msg.name)}
+                try:
+                    q = [msg.position[idx[j.name]] for j in self._chain.actuated]
+                except KeyError:
+                    return
+                self._actual.append(self._chain.fk(q)[:3, 3].copy())
 
     def _await_joint_state(self):
         self.get_logger().info("Waiting for /joint_states...")
@@ -280,7 +318,17 @@ class ShapeTracerNode(Node):
             # Everything after the approach -- descend, trace, lift -- goes out
             # as a single Cartesian path so the arm never stops at a vertex.
             poses = [_to_pose_msg(wp.position, wp.quaternion) for wp in waypoints[1:]]
-            self.blender.plan_and_execute(poses, f"{shape.name}:blended", shape.speed)
+            desc = f"{shape.name}:blended"
+            trajectory, fraction = self.blender.plan(poses, desc)
+            self.blender.retime(trajectory, shape.speed)
+            self.report_trajectory(shape, trajectory, fraction, len(poses))
+            self.publish_planned(trajectory)
+            self._recording = True
+            try:
+                self.blender.execute(trajectory, desc)
+            finally:
+                self._recording = False
+                self.publish_actual()
             return
 
         for i, wp in enumerate(waypoints[1:], start=1):
@@ -288,13 +336,79 @@ class ShapeTracerNode(Node):
             self._plan_and_exec_straight(wp.position, wp.quaternion, desc)
 
     def trace_all(self):
+        """Trace every loaded shape, stopping at the first failure.
+
+        Recovery policy on failure: log exactly which shape failed and why, and
+        do NOT start the next one. We deliberately do not command a "safe lift"
+        afterwards -- if a trace aborted, the controller's actual state is
+        unknown, and blindly commanding a motion from an unknown state is more
+        dangerous than stopping. Recovery is a deliberate operator action:
+        re-run, which begins by homing to a known configuration.
+        """
         self.publish_markers()
         if self.home_on_start:
             self.get_logger().info("Moving to the ready pose before tracing")
             self.go_home()
-        for shape in self.shapes:
-            self.trace_shape(shape)
+        for index, shape in enumerate(self.shapes):
+            try:
+                self.trace_shape(shape)
+            except Exception as exc:  # noqa: BLE001 - report, then stop
+                remaining = len(self.shapes) - index - 1
+                self.get_logger().error(
+                    f"[{shape.name}] failed: {exc}. Stopping; {remaining} shape(s) "
+                    f"not attempted. The arm is left where it stopped -- re-run to "
+                    f"recover via the ready pose."
+                )
+                raise
         self.get_logger().info("All shapes traced.")
+
+    def report_trajectory(self, shape, trajectory, fraction, n_poses):
+        pts = trajectory.joint_trajectory.points
+        dur = pts[-1].time_from_start
+        seconds = dur.sec + dur.nanosec * 1e-9
+        msg = (f"[{shape.name}] blended {n_poses} waypoints into one trajectory "
+               f"({len(pts)} points, {seconds:.2f}s at {shape.speed*100:.0f}% speed, "
+               f"{fraction*100:.1f}% of path)")
+        if self._chain is not None:
+            w = [self._chain.manipulability(p.positions) for p in pts]
+            msg += f"; manipulability min={min(w):.4f} mean={sum(w)/len(w):.4f}"
+            if min(w) < SINGULARITY_WARN:
+                self.get_logger().warn(
+                    f"[{shape.name}] passes close to a singularity "
+                    f"(manipulability {min(w):.4f} < {SINGULARITY_WARN}); expect "
+                    f"large joint speeds for small tool motion"
+                )
+        self.get_logger().info(msg)
+
+    def publish_planned(self, trajectory):
+        msg = DisplayTrajectory()
+        msg.model_id = "UF_ROBOT"
+        if self._joint_state is not None:
+            msg.trajectory_start.joint_state = self._joint_state
+        msg.trajectory.append(trajectory)
+        self.display_pub.publish(msg)
+
+    def publish_actual(self):
+        """Draw where the tool really went, for comparison with the target."""
+        if not self._actual:
+            return
+        marker = Marker()
+        marker.header.frame_id = "link_base"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "shape_tracer_actual"
+        marker.id = 0
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        marker.scale.x = 0.002
+        marker.color.r, marker.color.g, marker.color.b, marker.color.a = (0.95, 0.45, 0.15, 1.0)
+        marker.pose.orientation.w = 1.0
+        for p in self._actual:
+            pt = Point()
+            pt.x, pt.y, pt.z = (float(v) for v in p)
+            marker.points.append(pt)
+        arr = MarkerArray()
+        arr.markers.append(marker)
+        self.actual_pub.publish(arr)
 
     # -- RViz visualization (bonus) ----------------------------------------------
 

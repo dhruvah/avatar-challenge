@@ -112,9 +112,17 @@ def _tessellate_arc(prev_xy, arc: ArcSpec, segments: int) -> List[Sequence[float
     goals, so arcs/curves are sampled into short straight segments -- a
     standard technique for any planner limited to straight-line moves.
     """
+    if segments < 1:
+        raise ValueError(f"arc segments must be >= 1, got {segments}")
     center = np.array(arc["arc_center"], dtype=float)
     end = np.array(arc["arc_end"], dtype=float)
     clockwise = bool(arc.get("clockwise", False))
+    if np.linalg.norm(np.array(prev_xy, dtype=float) - end) < 1e-9:
+        # Ambiguous without a sweep field: zero-length arc, or full circle?
+        raise ValueError(
+            f"Arc start {prev_xy} and end {end.tolist()} coincide; split a full "
+            f"circle into two arcs"
+        )
 
     start_vec = np.array(prev_xy, dtype=float) - center
     end_vec = end - center
@@ -172,8 +180,12 @@ def _tessellate_bspline(prev_xy, spec: dict, segments: int) -> List[Sequence[flo
     vector makes the curve interpolate its first and last control points, which
     is what lets B-spline segments chain with plain points and arcs.
     """
+    if segments < 1:
+        raise ValueError(f"spline segments must be >= 1, got {segments}")
     control = np.array([list(prev_xy)] + [list(p) for p in spec["control_points"]], dtype=float)
     degree = int(spec.get("degree", 3))
+    if degree < 1:
+        raise ValueError(f"B-spline degree must be >= 1, got {degree}")
     if len(control) <= degree:
         raise ValueError(
             f"B-spline of degree {degree} needs at least {degree + 1} control points "
