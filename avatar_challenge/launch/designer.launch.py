@@ -17,6 +17,20 @@ def generate_launch_description():
                 ]
             )
         ),
+        launch_arguments={"show_rviz": "false"}.items(),
+    )
+
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        output="screen",
+        arguments=[
+            "-d",
+            PathJoinSubstitution(
+                [FindPackageShare("avatar_challenge"), "rviz", "shape_tracer.rviz"]
+            ),
+        ],
     )
 
     # xarm_planner/launch/_robot_planner.launch.py starts xarm_planner_node,
@@ -65,6 +79,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             xarm_moveit_launch,
+            rviz_node,
             xarm_planner_launch,
             designer_node,
         ]
