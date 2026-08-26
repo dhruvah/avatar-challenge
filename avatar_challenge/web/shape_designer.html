@@ -184,6 +184,10 @@ label.check input{accent-color:var(--pen)}
 .legend span{display:flex; align-items:center; gap:4px}
 .legend i{width:9px; height:9px; border-radius:2px; display:inline-block}
 .hint{font-size:11.5px; color:var(--ink-3); line-height:1.45}
+.derived{margin-top:10px; padding:7px 9px; border-left:2px solid var(--rule);
+  background:var(--surface-2); border-radius:0 4px 4px 0}
+.derived .lab{display:block; margin-bottom:3px}
+.derived p{margin:0; font-size:11px; white-space:pre-line; color:var(--ink-3); line-height:1.45}
 .note{
   font-size:11px; color:var(--ink-3); line-height:1.45;
   border-left:2px solid var(--rule); padding-left:8px; margin-top:8px;
@@ -269,6 +273,44 @@ label.check input{accent-color:var(--pen)}
       </section>
 
       <section class="panel">
+        <span class="lab">Shape options</span>
+        <div class="field" style="margin-bottom:7px">
+          <span class="lab">Name</span><input type="text" id="sName">
+        </div>
+        <div class="row" style="gap:14px">
+          <label class="check"><input type="checkbox" id="sClosed"> Closed</label>
+          <label class="check"><input type="checkbox" id="sSmooth"> Smooth (B&#8209;spline)</label>
+        </div>
+        <div class="field" style="margin-top:11px">
+          <span class="lab">Trajectory speed &mdash; relative to MoveIt plan
+            &mdash; <span class="mono" id="spdVal">50%</span></span>
+          <input type="range" id="sSpeed" min="5" max="100" step="5">
+        </div>
+        <div class="chips" id="speedPresets" style="margin-top:6px">
+          <button class="chip" data-speed="25">Slow</button>
+          <button class="chip" data-speed="50">Normal</button>
+          <button class="chip" data-speed="100">Full planned speed</button>
+        </div>
+        <p class="hint" style="margin:5px 0 0">50% preserves the planned path
+        while doubling its duration. Speed applies to the continuous Cartesian
+        trajectory.</p>
+        <div id="vtxBox" style="margin-top:10px; display:none">
+          <span class="lab">Selected vertex</span>
+          <div class="row" style="margin-top:5px">
+            <select id="vKind" style="flex:1">
+              <option value="line">Straight edge</option>
+              <option value="arc">Arc</option>
+            </select>
+            <button class="btn sm" id="vDel">Remove</button>
+          </div>
+          <div class="field" id="bulgeBox" style="margin-top:7px; display:none">
+            <span class="lab">Arc bulge &mdash; <span class="mono" id="bVal">20 mm</span></span>
+            <input type="range" id="vBulge" min="-120" max="120" step="2">
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
         <span class="lab">Plane placement</span>
         <div class="grid3">
           <div class="field"><span class="lab">X mm</span><input type="number" id="pX" step="5"></div>
@@ -276,6 +318,10 @@ label.check input{accent-color:var(--pen)}
           <div class="field"><span class="lab">Z mm</span><input type="number" id="pZ" step="5"></div>
         </div>
         <div class="row" style="margin-top:10px"><span class="lab">How the plane sits</span></div>
+        <p class="hint" style="margin:2px 0 8px">Imagine positioning a sheet of
+        paper: tilt the sheet, choose which direction it leans, then spin the
+        drawing on the sheet. ROS roll, pitch and yaw are calculated
+        automatically below.</p>
 
         <div class="orow">
           <span class="lab">Tilt</span>
@@ -298,7 +344,10 @@ label.check input{accent-color:var(--pen)}
         <p class="hint" style="margin:4px 0 0">The canvas is the plane&rsquo;s own
         frame, so Spin turns the plane <em>under</em> your drawing rather than
         moving it on screen. Watch the compass and the reach shading.</p>
-        <p class="note mono" id="rpyOut" style="margin-top:9px"></p>
+        <div class="derived">
+          <span class="lab">ROS export orientation &mdash; calculated automatically</span>
+          <p class="mono" id="rpyOut"></p>
+        </div>
       </section>
 
       <section class="panel">
@@ -330,35 +379,6 @@ label.check input{accent-color:var(--pen)}
         near-singular are reachable, and the robot will trace them; they just
         cost more joint motion and move less smoothly. The robot&rsquo;s own IK
         check decides, this is a guide for placing shapes.</p>
-      </section>
-
-      <section class="panel">
-        <span class="lab">Shape options</span>
-        <div class="field" style="margin-bottom:7px">
-          <span class="lab">Name</span><input type="text" id="sName">
-        </div>
-        <div class="row" style="gap:14px">
-          <label class="check"><input type="checkbox" id="sClosed"> Closed</label>
-          <label class="check"><input type="checkbox" id="sSmooth"> Smooth (B&#8209;spline)</label>
-        </div>
-        <div class="field" style="margin-top:9px">
-          <span class="lab">Trace speed &mdash; <span class="mono" id="spdVal">50%</span></span>
-          <input type="range" id="sSpeed" min="5" max="100" step="5">
-        </div>
-        <div id="vtxBox" style="margin-top:10px; display:none">
-          <span class="lab">Selected vertex</span>
-          <div class="row" style="margin-top:5px">
-            <select id="vKind" style="flex:1">
-              <option value="line">Straight edge</option>
-              <option value="arc">Arc</option>
-            </select>
-            <button class="btn sm" id="vDel">Remove</button>
-          </div>
-          <div class="field" id="bulgeBox" style="margin-top:7px; display:none">
-            <span class="lab">Arc bulge &mdash; <span class="mono" id="bVal">20 mm</span></span>
-            <input type="range" id="vBulge" min="-120" max="120" step="2">
-          </div>
-        </div>
       </section>
 
       <section class="panel">
@@ -515,6 +535,33 @@ function rpyToTfs(roll, pitch, yaw){
   const M=mul(base[0].map((_,i)=>base.map(r=>r[i])), R);    // base^T * R
   return [tilt, facing, Math.atan2(M[1][0], M[0][0])/D2R];
 }
+/** Wrap degrees into (-180, 180]. */
+function normDeg(d){
+  d = ((d % 360) + 360) % 360;
+  return d > 180 ? d - 360 : d;
+}
+
+/** True where Facing has no meaning: the normal is +/-Z, so Rz(Facing) and
+    Rz(Spin) are the same rotation and only their sum is observable. */
+function tiltIsDegenerate(tilt){ return tilt === 0 || tilt === 180; }
+
+/** Fold Facing into Spin on arriving at a degenerate tilt.
+
+    At Tilt=0    R = Rz(F)*Rz(S)          = Rz(F+S)
+    At Tilt=180  R = Rz(F)*Rx(180)*Rz(S)  = Rz(F-S)*Rx(180)
+
+    so the orientation is preserved by moving Facing into Spin and zeroing it.
+    Without this the control is disabled while its stale value still reaches the
+    export -- Facing -8 with Spin -79 exported yaw -87, which matched neither
+    number on screen. Done only on arrival, never on every render, so it cannot
+    fight the user mid-drag. */
+function canonicaliseTilt(pose, previousTilt){
+  if(!tiltIsDegenerate(pose.tilt) || pose.tilt === previousTilt) return;
+  pose.spin = normDeg(pose.tilt === 0 ? pose.spin + pose.facing
+                                      : pose.spin - pose.facing);
+  pose.facing = 0;
+}
+
 function tiltWord(t){
   if(t<8) return "flat, like a table";
   if(t<75) return "leaning back";
@@ -1191,13 +1238,13 @@ function syncPanel(){
   set("pX",s.pose.x); set("pY",s.pose.y); set("pZ",s.pose.z);
   const t=Math.round(s.pose.tilt), f=Math.round(s.pose.facing), sp=Math.round(s.pose.spin);
   set("oTilt",t); set("nTilt",t);
-  set("oFace",f); set("nFace", (s.pose.tilt < 2 || s.pose.tilt > 178) ? "" : f);
+  set("oFace",f); set("nFace", tiltIsDegenerate(s.pose.tilt) ? "" : f);
   set("oSpin",sp); set("nSpin",sp);
   document.getElementById("tiltWord").textContent=tiltWord(s.pose.tilt);
   // On a flat (or fully inverted) plane the normal is +/-Z, so "which way it
   // leans" is undefined -- Facing and Spin would do the same thing. Disable it
   // rather than let the control look broken.
-  const flat = s.pose.tilt < 2 || s.pose.tilt > 178;
+  const flat = tiltIsDegenerate(s.pose.tilt);
   const face = document.getElementById("nFace");
   document.getElementById("oFace").disabled = flat;
   face.disabled = flat;
@@ -1210,9 +1257,20 @@ function syncPanel(){
   // pose.roll/pitch/yaw are held in degrees for the UI; the export converts to
   // radians. Show both so the number in the file is never a surprise.
   const rd=v=>(v*Math.PI/180).toFixed(4);
-  document.getElementById("rpyOut").textContent=
-    `rpy ${s.pose.roll.toFixed(1)}\u00B0, ${s.pose.pitch.toFixed(1)}\u00B0, ${s.pose.yaw.toFixed(1)}\u00B0`
-    + `  \u2192 exported as ${rd(s.pose.roll)}, ${rd(s.pose.pitch)}, ${rd(s.pose.yaw)} rad`;
+  document.getElementById("rpyOut").textContent =
+    `roll ${s.pose.roll.toFixed(1)}\u00B0  pitch ${s.pose.pitch.toFixed(1)}\u00B0  `
+    + `yaw ${s.pose.yaw.toFixed(1)}\u00B0\n`
+    + `${rd(s.pose.roll)}, ${rd(s.pose.pitch)}, ${rd(s.pose.yaw)} rad`;
+  // shape options -- these reflect the *selected* shape, so they have to be
+  // rewritten on every sync or they keep showing the previous one
+  set("sName", s.name);
+  document.getElementById("sClosed").checked = s.closed;
+  document.getElementById("sSmooth").checked = s.smooth;
+  set("sSpeed", s.speed);
+  document.getElementById("spdVal").textContent = s.speed + "%";
+  document.querySelectorAll("#speedPresets .chip").forEach(c=>
+    c.setAttribute("aria-pressed", s.speed === +c.dataset.speed));
+
   // vertex box
   const vb=document.getElementById("vtxBox");
   if(selVtx>0 && selVtx<s.verts.length && !s.smooth){
@@ -1424,7 +1482,10 @@ function applyTfs(s){
 [["oTilt","nTilt","tilt"],["oFace","nFace","facing"],["oSpin","nSpin","spin"]]
   .forEach(([slider,number,key])=>{
     const set=v=>{ const s=sel(); if(!s||Number.isNaN(v)) return;
-      s.pose[key]=v; applyTfs(s); syncPanel(); draw(); };
+      const wasTilt=s.pose.tilt;
+      s.pose[key]=v;
+      if(key==="tilt") canonicaliseTilt(s.pose, wasTilt);
+      applyTfs(s); syncPanel(); draw(); };
     document.getElementById(slider).oninput=e=>set(+e.target.value);
     document.getElementById(number).oninput=e=>set(parseFloat(e.target.value));
   });
@@ -1433,6 +1494,10 @@ document.getElementById("sName").addEventListener("input",e=>{
 document.getElementById("sClosed").onchange=e=>{ const s=sel(); if(s){s.closed=e.target.checked; syncPanel(); draw();} };
 document.getElementById("sSmooth").onchange=e=>{ const s=sel(); if(s){s.smooth=e.target.checked; selVtx=-1; syncPanel(); draw();} };
 document.getElementById("sSpeed").oninput=e=>{ const s=sel(); if(s){s.speed=+e.target.value; syncPanel();} };
+document.querySelectorAll("#speedPresets .chip").forEach(c=>{
+  c.onclick=()=>{ const s=sel(); if(!s) return;
+    s.speed=+c.dataset.speed; syncPanel(); };
+});
 document.getElementById("vKind").onchange=e=>{
   const s=sel(); if(!s||selVtx<1) return;
   const v=s.verts[selVtx];

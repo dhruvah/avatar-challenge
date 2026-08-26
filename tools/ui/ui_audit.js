@@ -536,5 +536,133 @@ chk("shapes are exported as separate entries, not merged",
   chk("button offers to expand again", btn.textContent === "Expand", btn.textContent);
 })();
 
+// --- orientation: Tilt/Facing/Spin are one rotation, not six numbers -------
+(() => {
+  shapes = []; selId = null;
+  const sh = newShape("o", [{x:0,y:0,kind:"line"},{x:60,y:0,kind:"line"},
+                            {x:60,y:40,kind:"line"}]);
+  shapes.push(sh); selId = sh.id;
+
+  const setTilt = v => { const e = REG.get("oTilt"); e.value = String(v); e.oninput({target:e}); };
+
+  // the reported bug: Facing disabled at -8 still reached the export
+  sh.pose.tilt = 30; sh.pose.facing = -8; sh.pose.spin = -79; applyTfs(sh); syncPanel();
+  setTilt(0);
+  chk("flat plane folds Facing into Spin", Math.round(sh.pose.spin) === -87, sh.pose.spin);
+  chk("flat plane zeroes Facing", sh.pose.facing === 0, sh.pose.facing);
+  chk("displayed Spin now equals exported yaw",
+      Math.abs(sh.pose.yaw - sh.pose.spin) < 1e-6, `${sh.pose.yaw} vs ${sh.pose.spin}`);
+  chk("exported yaw is -87 deg",
+      Math.abs(JSON.parse(buildJSON()).shapes[0].start_pose.rpy[2] - (-87*Math.PI/180)) < 1e-6);
+
+  // and the same at the other degenerate end
+  sh.pose.tilt = 30; sh.pose.facing = 20; sh.pose.spin = 10; applyTfs(sh);
+  setTilt(180);
+  chk("inverted plane folds Facing out of Spin the other way",
+      Math.round(sh.pose.spin) === -10 && sh.pose.facing === 0,
+      `${sh.pose.spin}, ${sh.pose.facing}`);
+
+  // canonicalisation happens on arrival only, never mid-edit
+  sh.pose.tilt = 0; sh.pose.facing = 0; sh.pose.spin = 33; applyTfs(sh);
+  setTilt(0);
+  chk("re-setting the same tilt does not re-fold", sh.pose.spin === 33, sh.pose.spin);
+
+  // Spin turns the drawing on the sheet; it must not move the sheet
+  sh.pose.tilt = 40; sh.pose.facing = 25; sh.pose.spin = 0; applyTfs(sh);
+  const n0 = rotMatrix(sh.pose.roll, sh.pose.pitch, sh.pose.yaw).map(r => r[2]);
+  sh.pose.spin = 130; applyTfs(sh);
+  const n1 = rotMatrix(sh.pose.roll, sh.pose.pitch, sh.pose.yaw).map(r => r[2]);
+  chk("Spin leaves the plane normal alone",
+      n0.every((v, i) => Math.abs(v - n1[i]) < 1e-9));
+  const x0 = rotMatrix(sh.pose.roll, sh.pose.pitch, sh.pose.yaw).map(r => r[0]);
+  chk("Spin does move the plane's own X axis",
+      Math.hypot(...x0.map((v,i)=>v-[1,0,0][i])) > 1e-6);
+
+  // Facing tilts the sheet a different way, so it must move the normal
+  sh.pose.tilt = 40; sh.pose.facing = 0; sh.pose.spin = 0; applyTfs(sh);
+  const m0 = rotMatrix(sh.pose.roll, sh.pose.pitch, sh.pose.yaw).map(r => r[2]);
+  sh.pose.facing = 90; applyTfs(sh);
+  const m1 = rotMatrix(sh.pose.roll, sh.pose.pitch, sh.pose.yaw).map(r => r[2]);
+  chk("Facing moves the normal when the plane is tilted",
+      Math.hypot(...m0.map((v,i)=>v-m1[i])) > 0.1);
+
+  // the two representations describe the same rotation
+  [[30,-8,-79],[90,45,10],[135,-120,200],[0,0,0]].forEach(([t,f,sp]) => {
+    const A = rotMatrix(...tfsToRpy(t,f,sp));
+    const [t2,f2,s2] = rpyToTfs(...tfsToRpy(t,f,sp));
+    const B = rotMatrix(...tfsToRpy(t2,f2,s2));
+    let same = true;
+    for (let i=0;i<3;i++) for (let j=0;j<3;j++) if (Math.abs(A[i][j]-B[i][j]) > 1e-9) same = false;
+    chk(`tilt/facing/spin ${t},${f},${sp} survives the round trip`, same);
+  });
+})();
+
+// --- imported RPY shows an equivalent orientation --------------------------
+(() => {
+  const fixture = JSON.stringify({ shapes: [{
+    name: "imp", vertices: [[0,0],[0.08,0],[0.08,0.05]], closed: true,
+    start_pose: { position: [0.32,-0.04,0.27], rpy: [0.6,-0.3,1.2] } }]});
+  importJSON(fixture);
+  const p = sel().pose;
+  chk("import yields usable tilt/facing/spin",
+      [p.tilt,p.facing,p.spin].every(Number.isFinite));
+  // Import does not recompute rpy from the rounded controls, so the exported
+  // orientation is exactly what was imported -- the round trip is lossless.
+  const ex = JSON.parse(buildJSON()).shapes[0].start_pose.rpy;
+  chk("import -> export preserves rpy exactly",
+      [0.6,-0.3,1.2].every((v,i) => Math.abs(ex[i]-v) < 1e-12), ex.join(","));
+
+  // The displayed controls are whole degrees, so they describe the same
+  // rotation to within that rounding rather than bit-exactly.
+  const orig = rotMatrix(0.6/D2R, -0.3/D2R, 1.2/D2R);
+  const shown = rotMatrix(...tfsToRpy(p.tilt,p.facing,p.spin));
+  let worst = 0;
+  for (let i=0;i<3;i++) for (let j=0;j<3;j++) worst = Math.max(worst, Math.abs(orig[i][j]-shown[i][j]));
+  chk("displayed tilt/facing/spin is the same rotation within 1 deg rounding",
+      worst < 5e-3, worst.toExponential(2));
+})();
+
+// --- speed presets ---------------------------------------------------------
+(() => {
+  shapes = []; selId = null;
+  const sh = newShape("sp", [{x:0,y:0,kind:"line"},{x:50,y:0,kind:"line"}]);
+  shapes.push(sh); selId = sh.id; syncPanel();
+  REG.group("#speedPresets .chip", [25,50,100].map(v => {
+    const e = mkEl("", "button"); e.dataset.speed = String(v); return e; }));
+  chk("speed is still per shape and exported in (0,1]", (() => {
+    sh.speed = 25; syncPanel();
+    return JSON.parse(buildJSON()).shapes[0].speed === 0.25;
+  })());
+})();
+
+// --- the shape-option controls must follow the selection -------------------
+// They stopped being written at all, so Name/Closed/Smooth/Speed kept showing
+// whatever the previously selected shape had.
+(() => {
+  shapes = []; selId = null;
+  const a = newShape("alpha", [{x:0,y:0,kind:"line"},{x:50,y:0,kind:"line"}]);
+  a.closed = true;  a.smooth = false; a.speed = 25;
+  const b = newShape("beta",  [{x:0,y:0,kind:"line"},{x:70,y:0,kind:"line"},
+                               {x:70,y:40,kind:"line"},{x:0,y:40,kind:"line"}]);
+  b.closed = false; b.smooth = true;  b.speed = 100;
+  shapes.push(a, b);
+
+  selId = a.id; syncPanel();
+  chk("name follows the selection", REG.get("sName").value === "alpha", REG.get("sName").value);
+  chk("closed follows the selection", REG.get("sClosed").checked === true);
+  chk("smooth follows the selection", REG.get("sSmooth").checked === false);
+  chk("speed follows the selection", String(REG.get("sSpeed").value) === "25",
+      REG.get("sSpeed").value);
+  chk("speed readout follows the selection", REG.get("spdVal").textContent === "25%",
+      REG.get("spdVal").textContent);
+
+  selId = b.id; syncPanel();
+  chk("switching shape updates the name", REG.get("sName").value === "beta", REG.get("sName").value);
+  chk("switching shape updates closed", REG.get("sClosed").checked === false);
+  chk("switching shape updates smooth", REG.get("sSmooth").checked === true);
+  chk("switching shape updates speed", String(REG.get("sSpeed").value) === "100",
+      REG.get("sSpeed").value);
+})();
+
 console.log(`\n${checks} checks, ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);

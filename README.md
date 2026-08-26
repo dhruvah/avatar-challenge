@@ -148,6 +148,12 @@ if you mean it). Nothing needs to be published from the container.
 Draw on a millimetre grid, watch the workspace shading, press **Send to robot**,
 and the trace animates live over your drawing while the arm moves in RViz.
 
+Orientation is set the way you would place a sheet of paper — **Tilt** how far
+it leans, **Facing** which way it leans, **Spin** the drawing on the sheet. Roll,
+pitch and yaw are derived from those and shown read-only, because they are the
+same three degrees of freedom in the representation the JSON uses, not six
+independent numbers.
+
 Every submission returns to the ready pose first, so repeated sends of the same
 design produce the same motion rather than starting from wherever the previous
 one stopped. Homing *between shapes within* one submission is deliberately not
