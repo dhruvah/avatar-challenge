@@ -44,10 +44,13 @@ class FakeNode:
         self.fail_on = fail_on
         self.markers = 0
         self.cleared = 0
+        self.homed = []
+        self.home_on_start = True
         self.shapes = []
 
     def get_logger(self): return self._log
     def publish_markers(self): self.markers += 1
+    def go_home(self): self.homed.append(len(self.traced))
     def clear_actual(self): self.cleared += 1
     def create_subscription(self, *a, **k): return None
 
@@ -93,6 +96,24 @@ def test_no_staging_file_is_left_behind_after_a_rejection(tmp_path):
     leftovers = [f for f in os.listdir(os.path.dirname(srv.config_path))
                  if f.endswith(".staged")]
     assert leftovers == []
+
+
+def test_every_submission_starts_from_the_ready_pose(tmp_path):
+    """Otherwise the second trace begins wherever the first one stopped, and the
+    Cartesian solver seeds its IK from that arbitrary configuration."""
+    srv, node = make_server(tmp_path)
+    srv._run(GOOD)
+    srv._run(GOOD)
+    assert node.homed == [0, 1], "homing did not happen once before each trace"
+    assert node.traced == ["sq", "sq"]
+
+
+def test_homing_is_not_repeated_between_shapes_in_one_request(tmp_path):
+    two = {"shapes": [dict(GOOD["shapes"][0], name="a"),
+                      dict(GOOD["shapes"][0], name="b")]}
+    srv, node = make_server(tmp_path)
+    srv._run(two)
+    assert len(node.homed) == 1, "homing between shapes was measured as worse"
 
 
 def test_a_valid_design_does_replace_the_file(tmp_path):

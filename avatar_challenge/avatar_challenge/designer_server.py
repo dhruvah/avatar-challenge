@@ -257,6 +257,17 @@ class DesignerServer:
         self.node.clear_actual()
 
         self._state, self._error = TRACING, None
+        # Every submission starts from the ready pose, not from wherever the
+        # previous one happened to stop. The approach is planned from the
+        # current pose and the Cartesian solver seeds its IK from it, so an
+        # arbitrary end configuration makes the next trace start in a different
+        # -- sometimes contorted -- branch. Homing once per request keeps
+        # repeated submissions identical. Homing between *shapes* within a
+        # request was measured as strictly worse and is deliberately not done.
+        if getattr(self.node, "home_on_start", True):
+            self.node.get_logger().info("Returning to the ready pose")
+            self.node.go_home()
+
         self._total, self._index = len(shapes), 0
         names = [s.name for s in shapes]
         try:

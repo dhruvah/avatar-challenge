@@ -148,6 +148,11 @@ if you mean it). Nothing needs to be published from the container.
 Draw on a millimetre grid, watch the workspace shading, press **Send to robot**,
 and the trace animates live over your drawing while the arm moves in RViz.
 
+Every submission returns to the ready pose first, so repeated sends of the same
+design produce the same motion rather than starting from wherever the previous
+one stopped. Homing *between shapes within* one submission is deliberately not
+done — it was measured as strictly worse.
+
 **Send to robot is disabled while any point is out of reach**, with a line
 naming the shape and how many of its points are outside the workspace. Marginal
 and near-singular ground do not block — they are reachable.
