@@ -3,8 +3,10 @@
 # Based on xarm_moveit_config/rviz/moveit.rviz, with three changes so the result
 # is visible without configuring RViz by hand:
 #   * MarkerArray displays for the target outlines and the executed tool path
-#   * Show Trail and Loop Animation on the planned path, which are off in the
-#     stock config, so the trajectory flashes once and is easy to miss
+#   * Show Trail on the planned path, which is off in the stock config, so the
+#     trajectory flashes once and is easy to miss. Loop Animation is left OFF on
+#     purpose: it replays the planned path forever with a ghost arm, which reads
+#     as the robot executing over and over.
 Panels:
 - Class: rviz_common/Displays
   Help Height: 78
@@ -120,7 +122,7 @@ Visualization Manager:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-      Loop Animation: true
+      Loop Animation: false
       Robot Alpha: 0.5
       Robot Color: 150; 50; 150
       Show Robot Collision: false
