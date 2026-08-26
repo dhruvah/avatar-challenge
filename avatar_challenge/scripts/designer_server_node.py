@@ -48,7 +48,14 @@ def main(argv=None):
         server.start()
         if node.home_on_start:
             node.get_logger().info("Moving to the ready pose")
-            node.go_home()
+            try:
+                node.go_home()
+            except RuntimeError as exc:
+                # The designer has nothing to trace yet, so a controller that is
+                # slow to come up must not take the server down with it.
+                node.get_logger().warn(
+                    f"could not reach the ready pose at startup ({exc}); "
+                    f"serving anyway -- the arm will approach from where it is")
         server.spin(rclpy)
     except (KeyboardInterrupt, SystemExit):
         pass

@@ -197,20 +197,37 @@ class ShapeTracerNode(Node):
         self._plan_and_exec_free(waypoint.position, waypoint.quaternion,
                                  f"{shape_name}:approach(free)")
 
-    def go_home(self):
+    def go_home(self, attempts: int = 4, delay: float = 2.0):
         """Drive to the configured ready pose in joint space.
 
         The free-space approach is planned by RRTConnect, which is sampling-based:
         from an arbitrary start it produces a different, often meandering path
         every run. Starting each shape from the same known configuration makes
         that approach short, repeatable, and easy to watch. It also gives the
-        Cartesian solver a sane seed, so it picks a natural IK branch rather than
-        whatever contorted one happens to sit near the previous shape's end.
+        Cartesian solver a sane seed instead of whatever contorted branch sits
+        near the previous shape's end.
+
+        Retried because this is the first motion after launch, and the joint
+        trajectory controller can still be activating when the planner's
+        services are already answering -- the execute then fails for a reason
+        that resolves itself a second later.
         """
-        req = PlanJoint.Request()
-        req.target = [float(v) for v in self.home_joints]
-        self._call(self.joint_plan_cli, req, "joint_plan(home)")
-        self._call(self.exec_cli, PlanExec.Request(wait=True), "exec_plan(home)")
+        last = None
+        for attempt in range(1, attempts + 1):
+            try:
+                req = PlanJoint.Request()
+                req.target = [float(v) for v in self.home_joints]
+                self._call(self.joint_plan_cli, req, "joint_plan(home)")
+                self._call(self.exec_cli, PlanExec.Request(wait=True), "exec_plan(home)")
+                return
+            except RuntimeError as exc:
+                last = exc
+                if attempt < attempts:
+                    self.get_logger().warn(
+                        f"homing attempt {attempt}/{attempts} failed ({exc}); "
+                        f"the controller may still be starting -- retrying")
+                    time.sleep(delay)
+        raise last
 
     # -- robot state ------------------------------------------------------------
 
