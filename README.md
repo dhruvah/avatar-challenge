@@ -338,7 +338,7 @@ solution and still sit where small tool motions demand large joint speeds.
 
 ```bash
 colcon test --packages-select avatar_challenge
-colcon test-result --all --verbose      # 4 suites, 93 tests
+colcon test-result --all --verbose      # 5 suites, 98 tests
 ```
 
 The suite is deliberately small and needs neither ROS nor a robot: the geometry
@@ -408,7 +408,7 @@ avatar_challenge/
   launch/                 start.launch.py, designer.launch.py
   rviz/shape_tracer.rviz  layout with the displays already added
   web/shape_designer.html the designer page
-  test/                   93 tests, no robot required
+  test/                   98 tests, no robot required
 tools/
   verify_path.py          records link_eef from TF, measures deviation from target
   path_fidelity.py        executed vs requested path, in the units you drew in
