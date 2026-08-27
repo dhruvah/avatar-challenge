@@ -13,13 +13,37 @@ One package, one build, two entry points:
 
 Both drive the same tracing engine and the same JSON schema.
 
+### Bonus features
+
+- RViz visualisation of the target, planned and executed paths
+- Circular arcs
+- Clamped B-splines evaluated with De Boor's algorithm
+- Continuous Cartesian trajectory blending
+- Per-shape trajectory-speed scaling
+- Optional browser shape designer
+
 ---
 
 ## 1. Build
 
-Inside the container:
+**No Dockerfile and no second container.** The supplied
+`avatarrobotics/ros-humble-xarm:20250602` image already has ROS 2 Humble,
+MoveIt, the xArm packages, Python and NumPy; this package builds directly in it.
+The whole workflow is one container, one clone, one `colcon build`, and
+`start.launch.py`.
+
+Start the supplied container as its README describes and connect over RDP to
+`localhost:5566` as user `dev`. **Only port 5566 needs publishing** — the
+optional designer is opened from a browser *inside* that desktop, so host port
+8080 is not required.
+
+Then, in a terminal inside the RDP desktop:
 
 ```bash
+cd /home/dev/dev_ws/src
+git clone https://github.com/dhruvah/avatar-challenge.git
+mv avatar-challenge/avatar_challenge .        # the package lives one level down
+
 # ~/.bashrc sources only dev_ws. xarm_moveit_config, xarm_planner and xarm_msgs
 # live in xarm_ws, so it must be sourced first or the launch cannot find them.
 source /home/dev/xarm_ws/install/setup.bash
@@ -28,6 +52,13 @@ cd /home/dev/dev_ws
 colcon build --packages-select avatar_challenge
 source install/setup.bash
 ```
+
+<details>
+<summary>Build steps in the container as originally supplied</summary>
+
+If the workspace already contains the stub `avatar_challenge`, replace it with
+the cloned one before building.
+</details>
 
 ## 2. Run the included shapes
 
@@ -60,12 +91,15 @@ there is something to look at. Ctrl-C when finished.
 
 ## 3. Use your own shapes
 
-Edit `config/shapes.json` and rebuild, or point the node at any other file:
+Pass any file to the launch, without editing or rebuilding:
 
 ```bash
-ros2 run avatar_challenge shape_tracer_node.py --ros-args \
-  -p shapes_file:=/path/to/my_shapes.json
+ros2 launch avatar_challenge start.launch.py \
+  shapes_file:=/absolute/path/to/my_shapes.json
 ```
+
+Editing `config/shapes.json` and rebuilding is equally valid, and is what the
+default launch traces.
 
 This JSON file is the stable robot-facing interface.
 
@@ -154,10 +188,10 @@ pitch and yaw are derived from those and shown read-only, because they are the
 same three degrees of freedom in the representation the JSON uses, not six
 independent numbers.
 
-Every submission returns to the ready pose first, so repeated sends of the same
-design produce the same motion rather than starting from wherever the previous
-one stopped. Homing *between shapes within* one submission is deliberately not
-done — it was measured as strictly worse.
+The designer homes **once at startup and again before every submitted trace**, so
+repeated sends of the same design produce the same motion instead of starting
+from wherever the previous one stopped. Homing *between shapes within* one
+submission is deliberately not done — it was measured as strictly worse.
 
 **Send to robot is disabled while any point is out of reach**, with a line
 naming the shape and how many of its points are outside the workspace. Marginal
@@ -226,6 +260,14 @@ approach pen-up above the first vertex → descend → trace → lift.
 Homing happens first, before any preflight, so the arm starts from a known
 configuration; the reachability check runs before each shape's *own* motion. The
 hover waypoints are what stop the tool dragging a line between shapes.
+
+`start.launch.py` homes once per run. The designer homes at startup and again
+before each submitted trace, since it accepts many traces in one session.
+
+Homing retries a *rejection* — the trajectory controller can still be activating
+while the planner's services already answer. It never retries a *timeout*: that
+means the service did not answer, so it is unknown whether the motion started,
+and re-commanding an arm that may already be moving is the wrong response.
 
 ### Two execution backends
 

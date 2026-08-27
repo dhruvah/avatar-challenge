@@ -3,9 +3,9 @@
 <package format="3">
   <name>avatar_challenge</name>
   <version>0.0.1</version>
-  <description>Avatar Challenge: trace 2D shapes in 3D space with a simulated xArm7</description>
-  <maintainer email="youremail@domain.com">Your Name</maintainer>
-  <license>Proprietary</license>
+  <description>Trace a list of 2D shapes in 3D space with a simulated UFactory xArm 7</description>
+  <maintainer email="harsh.dhruva@gmail.com">Harsh Dhruva</maintainer>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>

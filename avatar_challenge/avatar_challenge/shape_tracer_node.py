@@ -37,6 +37,15 @@ class IKServiceError(RuntimeError):
     """/compute_ik failed to answer -- distinct from a pose being unreachable."""
 
 
+class ServiceTimeout(RuntimeError):
+    """A service did not answer. The arm's state is unknown: the request may
+    have been received and acted on, so this must never be retried blindly."""
+
+
+class PlannerRejected(RuntimeError):
+    """A service answered and said no. Nothing was started, so retrying is safe."""
+
+
 def _to_pose_msg(position, quaternion) -> Pose:
     pose = Pose()
     pose.position.x, pose.position.y, pose.position.z = (float(v) for v in position)
@@ -159,9 +168,9 @@ class ShapeTracerNode(Node):
         future = client.call_async(request)
         rclpy.spin_until_future_complete(self, future, timeout_sec=self.service_timeout)
         if future.result() is None:
-            raise RuntimeError(f"{description}: service call timed out / failed")
+            raise ServiceTimeout(f"{description}: service call timed out")
         if not future.result().success:
-            raise RuntimeError(f"{description}: planner reported failure")
+            raise PlannerRejected(f"{description}: planner reported failure")
         return future.result()
 
     def _plan_and_exec_free(self, position, quaternion, description):
@@ -209,8 +218,13 @@ class ShapeTracerNode(Node):
 
         Retried because this is the first motion after launch, and the joint
         trajectory controller can still be activating when the planner's
-        services are already answering -- the execute then fails for a reason
-        that resolves itself a second later.
+        services are already answering -- the execute is then rejected for a
+        reason that resolves itself a second later.
+
+        Only an outright rejection is retried. A timeout means the service never
+        answered, so it is unknown whether the motion was started; re-commanding
+        an arm that may already be moving is exactly the wrong response, and it
+        is raised immediately instead.
         """
         last = None
         for attempt in range(1, attempts + 1):
@@ -220,11 +234,11 @@ class ShapeTracerNode(Node):
                 self._call(self.joint_plan_cli, req, "joint_plan(home)")
                 self._call(self.exec_cli, PlanExec.Request(wait=True), "exec_plan(home)")
                 return
-            except RuntimeError as exc:
+            except PlannerRejected as exc:
                 last = exc
                 if attempt < attempts:
                     self.get_logger().warn(
-                        f"homing attempt {attempt}/{attempts} failed ({exc}); "
+                        f"homing attempt {attempt}/{attempts} rejected ({exc}); "
                         f"the controller may still be starting -- retrying")
                     time.sleep(delay)
         raise last

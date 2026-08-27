@@ -1,7 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from uf_ros_lib.moveit_configs_builder import MoveItConfigsBuilder
@@ -89,9 +89,7 @@ def launch_setup(context, *args, **kwargs):
         }.items(),
     )
 
-    shapes_file = PathJoinSubstitution(
-        [FindPackageShare("avatar_challenge"), "config", "shapes.json"]
-    )
+    shapes_file = LaunchConfiguration("shapes_file")
 
     shape_tracer_node = Node(
         package="avatar_challenge",
@@ -124,4 +122,14 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([OpaqueFunction(function=launch_setup)])
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            "shapes_file",
+            default_value=PathJoinSubstitution(
+                [FindPackageShare("avatar_challenge"), "config", "shapes.json"]
+            ),
+            description="Shape list to trace. Defaults to the packaged samples; "
+                        "pass an absolute path to trace your own without rebuilding.",
+        ),
+        OpaqueFunction(function=launch_setup),
+    ])

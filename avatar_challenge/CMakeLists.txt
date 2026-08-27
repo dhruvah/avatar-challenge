@@ -27,6 +27,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(geometry_tests test/test_geometry.py)
   ament_add_pytest_test(kinematics_tests test/test_kinematics.py)
   ament_add_pytest_test(execution_safety_tests test/test_execution_safety.py)
+  ament_add_pytest_test(homing_tests test/test_homing.py)
   ament_add_pytest_test(designer_server_tests test/test_designer_server.py)
 endif()
 
