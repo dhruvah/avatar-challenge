@@ -664,5 +664,32 @@ chk("shapes are exported as separate entries, not merged",
       REG.get("sSpeed").value);
 })();
 
+// --- a traced path must not outlive the shape it was traced from ----------
+(() => {
+  shapes = []; selId = null;
+  const sh = newShape("t", [{x:0,y:0,kind:"line"},{x:80,y:0,kind:"line"},
+                            {x:80,y:50,kind:"line"},{x:0,y:50,kind:"line"}]);
+  shapes.push(sh); selId = sh.id; applyTfs(sh); syncPanel();
+
+  live.shape = "t";
+  live.path = [[0,0],[80,0],[80,50]];
+  live.sig = shapeSignature(sh);
+
+  ctx.calls.moveTo = 0; drawLive();
+  chk("the trace draws while the shape is unchanged", ctx.calls.moveTo > 0);
+
+  sh.verts[2].x = 200;                       // reshape it
+  ctx.calls.moveTo = 0; drawLive();
+  chk("editing a vertex retires the previous trace", ctx.calls.moveTo === 0);
+
+  sh.verts[2].x = 80;                        // undo, then move the plane
+  ctx.calls.moveTo = 0; drawLive();
+  chk("restoring the shape brings its trace back", ctx.calls.moveTo > 0);
+
+  sh.pose.z += 25; applyTfs(sh);
+  ctx.calls.moveTo = 0; drawLive();
+  chk("moving the plane retires the previous trace", ctx.calls.moveTo === 0);
+})();
+
 console.log(`\n${checks} checks, ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);

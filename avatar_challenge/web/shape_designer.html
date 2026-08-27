@@ -959,7 +959,18 @@ function drawVerts(s, isSel){
 
 /* live trace overlay: the tool path the robot reports while it is drawing,
    already projected into this shape's 2D frame by the server */
-let live={path:[], shape:null, fraction:0, tracing:false, joints:null, state:null, error:null};
+let live={path:[], shape:null, fraction:0, tracing:false, joints:null,
+          state:null, error:null, sig:null};
+
+/** What the traced path was drawn against. If any of this changes the recorded
+    path no longer describes the shape on screen, so it must stop being drawn --
+    matching on the name alone let an edited shape keep the previous run's
+    outline lying across it. */
+function shapeSignature(sh){
+  return JSON.stringify([sh.verts, sh.closed, sh.smooth,
+                         sh.pose.x, sh.pose.y, sh.pose.z,
+                         sh.pose.roll, sh.pose.pitch, sh.pose.yaw]);
+}
 function drawLive(){
   if(!live.path.length) return;
   // The path is expressed in the traced shape's own frame, so it is only
@@ -967,6 +978,7 @@ function drawLive(){
   // A's path on top of B.
   const s=sel();
   if(!s || (live.shape && live.shape!==s.name) || !s.verts.length) return;
+  if(live.sig && shapeSignature(s)!==live.sig) return;   // the shape has moved on
   // The exported shape folds its first vertex into start_pose.position, so the
   // robot reports the path relative to that vertex. The canvas draws in raw
   // canvas coordinates, where the first vertex is wherever it was drawn -- add
@@ -1639,9 +1651,13 @@ async function pollProgress(){
     // during a multi-shape run the selection tracks whichever shape the arm is
     // on. Without this you watch shape 2 being traced while shape 1 is selected
     // and see nothing.
-    if(j.shape && (!sel() || sel().name!==j.shape)){
+    if(j.shape && live.shape!==j.shape){
       const target=shapes.find(x=>x.name===j.shape);
-      if(target){ selId=target.id; selVtx=-1; syncPanel(); }
+      if(target){
+        // remember what this path is being drawn against, so an edit retires it
+        live.sig=shapeSignature(target);
+        if(!sel() || sel().name!==j.shape){ selId=target.id; selVtx=-1; syncPanel(); }
+      }
     }
     live.fraction=j.fraction||0; live.tracing=!!j.tracing; live.shape=j.shape||null;
     const pct=Math.round(live.fraction*100);
@@ -1657,7 +1673,7 @@ async function pollProgress(){
   }catch(_){ /* link dropped; the status poll reports it */ }
 }
 function startLive(){
-  showBar(true); live.path=[];
+  showBar(true); live.path=[]; live.sig=null;
   if(livePoll) clearInterval(livePoll);
   livePoll=setInterval(pollProgress, 150);
 }
