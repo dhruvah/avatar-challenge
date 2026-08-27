@@ -170,16 +170,54 @@ Both tessellate into `arc_segments` (default 16) straight sub-segments.
 
 ## 4. Optional: the visual designer
 
-Not needed for the challenge workflow. Same build, different launch:
+Not needed for the challenge workflow. Same build, different launch.
+
+### Browser inside the RDP desktop — no extra port
 
 ```bash
 ros2 launch avatar_challenge designer.launch.py
 ```
 
-Then open **<http://localhost:8080>** in a browser **inside the RDP desktop**.
-The server binds to loopback only — it moves a robot, and should not be
-reachable from the network without someone deciding so (`-p bind_address:=0.0.0.0`
-if you mean it). Nothing needs to be published from the container.
+Open **<http://localhost:8080>** in a browser inside the RDP desktop. The server
+binds loopback only, so nothing is exposed outside the container and the
+original `docker run` above is sufficient.
+
+### Browser on your host — one extra published port
+
+Create the container with one additional host-loopback mapping:
+
+```bash
+docker run --name xarm-container \
+  --platform linux/amd64 \
+  -p 5566:3389 \
+  -p 127.0.0.1:8080:8080 \
+  avatarrobotics/ros-humble-xarm:20250602
+```
+
+Inside the container:
+
+```bash
+ros2 launch avatar_challenge designer.launch.py bind_address:=0.0.0.0
+```
+
+On your host, open **<http://localhost:8080>**.
+
+This uses the **original Avatar image**. There is no `docker build`, no
+Dockerfile, and no second application container. Binding the host side as
+`127.0.0.1:8080:8080` keeps it off the LAN, and the server must bind `0.0.0.0`
+*inside* the container so Docker's published port can reach it — which is why
+the argument exists rather than being the default. `port:=` moves it if 8080 is
+taken.
+
+### If your container already exists without port 8080
+
+Docker cannot add a published port to an existing container. The options are:
+
+1. Use the browser inside the RDP desktop (no extra port needed).
+2. Recreate the container with the mapping above.
+3. Advanced fallback: `tools/docker_tunnel.py` forwards the port over
+   `docker exec`. It needs Python and Docker CLI access on the host plus a host
+   copy of that script, so it is a last resort rather than part of the workflow.
 
 ![The shape designer](docs/shape_designer.png)
 
@@ -235,10 +273,6 @@ HTTP designer     ───┘
 Only one runs at a time — they are separate launch files, and neither starts the
 other's frontend. A fix to the geometry, the schema, the preflight or the
 execution path applies to both because there is only one of each.
-
-If you would rather use a browser on the host than inside the RDP desktop,
-`tools/docker_tunnel.py` forwards the port over `docker exec` (loopback only).
-It is a convenience, not part of the workflow.
 
 ---
 
