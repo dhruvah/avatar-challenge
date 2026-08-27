@@ -1,8 +1,9 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from uf_ros_lib.moveit_configs_builder import MoveItConfigsBuilder
 
@@ -105,9 +106,10 @@ def launch_setup(context, *args, **kwargs):
                 "service_timeout_sec": 120.0,
                 "blend": True,
                 "blend_max_step": 0.005,
-                "port": 8080,
-                # Loopback only; this moves a robot.
-                "bind_address": "127.0.0.1",
+                # The port has to be an int, and a LaunchConfiguration is a
+                # string until it is typed.
+                "port": ParameterValue(LaunchConfiguration("port"), value_type=int),
+                "bind_address": LaunchConfiguration("bind_address"),
             }
         ],
     )
@@ -121,4 +123,17 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    return LaunchDescription([OpaqueFunction(function=launch_setup)])
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            "bind_address",
+            default_value="127.0.0.1",
+            description="Interface the designer listens on. Loopback by default, "
+                        "because this moves a robot. Use 0.0.0.0 to reach it "
+                        "through a published Docker port from the host browser.",
+        ),
+        DeclareLaunchArgument(
+            "port", default_value="8080",
+            description="Port the designer listens on.",
+        ),
+        OpaqueFunction(function=launch_setup),
+    ])

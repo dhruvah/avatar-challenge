@@ -26,39 +26,43 @@ Both drive the same tracing engine and the same JSON schema.
 
 ## 1. Build
 
-**No Dockerfile and no second container.** The supplied
-`avatarrobotics/ros-humble-xarm:20250602` image already has ROS 2 Humble,
-MoveIt, the xArm packages, Python and NumPy; this package builds directly in it.
-The whole workflow is one container, one clone, one `colcon build`, and
-`start.launch.py`.
+**No Dockerfile, no image build, no second container.** The supplied
+`avatarrobotics/ros-humble-xarm:20250602` image already has ROS 2 Humble, MoveIt,
+the xArm packages, Python and NumPy. One container, one clone, one `colcon
+build`, and `start.launch.py`.
 
-Start the supplied container as its README describes and connect over RDP to
-`localhost:5566` as user `dev`. **Only port 5566 needs publishing** — the
-optional designer is opened from a browser *inside* that desktop, so host port
-8080 is not required.
-
-Then, in a terminal inside the RDP desktop:
+Avatar's original Docker command is sufficient for the challenge workflow:
 
 ```bash
-cd /home/dev/dev_ws/src
-git clone https://github.com/dhruvah/avatar-challenge.git
-mv avatar-challenge/avatar_challenge .        # the package lives one level down
+docker run --name xarm-container \
+  --platform linux/amd64 \
+  -p 5566:3389 \
+  avatarrobotics/ros-humble-xarm:20250602
+```
 
-# ~/.bashrc sources only dev_ws. xarm_moveit_config, xarm_planner and xarm_msgs
-# live in xarm_ws, so it must be sourced first or the launch cannot find them.
+Connect over RDP to `localhost:5566` as user `dev`. Then, in a terminal inside
+that desktop:
+
+```bash
 source /home/dev/xarm_ws/install/setup.bash
+
+cd /home/dev/dev_ws/src
+rm -rf avatar_challenge                       # the image ships a starter package
+git clone https://github.com/dhruvah/avatar-challenge.git avatar_challenge
 
 cd /home/dev/dev_ws
 colcon build --packages-select avatar_challenge
 source install/setup.bash
 ```
 
-<details>
-<summary>Build steps in the container as originally supplied</summary>
+Removing `avatar_challenge` is appropriate **only in a fresh evaluation
+container**, where it is the unmodified starter package. The repository root is
+the ROS package, so the clone lands `package.xml` exactly where the starter one
+was and the pre-built workspace reconfigures cleanly.
 
-If the workspace already contains the stub `avatar_challenge`, replace it with
-the cloned one before building.
-</details>
+> `~/.bashrc` sources only `dev_ws`. `xarm_moveit_config`, `xarm_planner` and
+> `xarm_msgs` live in `xarm_ws`, so it must be sourced first or the launch fails
+> with *"package 'xarm_moveit_config' not found"*.
 
 ## 2. Run the included shapes
 
@@ -395,20 +399,24 @@ shapes keep the PDF's geometry (100 mm square, 45° about Z) at a reachable
 
 ## Layout
 
+The repository root *is* the ROS package, so cloning it straight into
+`dev_ws/src/avatar_challenge` puts `package.xml` exactly where the supplied
+starter package was.
+
 ```
-avatar_challenge/
-  avatar_challenge/
-    geometry.py           rotations, plane transform, arc + B-spline tessellation
-    shapes_io.py          JSON loading and strict validation
-    blended_path.py       Cartesian planning, re-timing, execution
-    kinematics.py         FK, Jacobian, manipulability from the URDF
-    shape_tracer_node.py  preflight, motion strategy, RViz output
-    designer_server.py    HTTP frontend; everything browser-facing lives here
-  config/shapes.json      the four sample shapes
-  launch/                 start.launch.py, designer.launch.py
-  rviz/shape_tracer.rviz  layout with the displays already added
-  web/shape_designer.html the designer page
-  test/                   98 tests, no robot required
+package.xml, CMakeLists.txt
+avatar_challenge/         the Python package
+  geometry.py             rotations, plane transform, arc + B-spline tessellation
+  shapes_io.py            JSON loading and strict validation
+  blended_path.py         Cartesian planning, re-timing, execution
+  kinematics.py           FK, Jacobian, manipulability from the URDF
+  shape_tracer_node.py    preflight, motion strategy, RViz output
+  designer_server.py      HTTP frontend; everything browser-facing lives here
+config/shapes.json        the four sample shapes
+launch/                   start.launch.py, designer.launch.py
+rviz/shape_tracer.rviz    layout with the displays already added
+web/shape_designer.html   the designer page
+test/                     98 tests, no robot required
 tools/
   verify_path.py          records link_eef from TF, measures deviation from target
   path_fidelity.py        executed vs requested path, in the units you drew in

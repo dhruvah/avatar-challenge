@@ -4,7 +4,7 @@ These need neither ROS nor a running robot -- geometry.py and shapes_io.py
 import only numpy and the standard library, which is why the rotation and
 tessellation maths lives there rather than inside the node.
 
-Run:  python3 -m pytest avatar_challenge/test/test_geometry.py -q
+Run:  python3 -m pytest test/test_geometry.py -q
 """
 
 import json

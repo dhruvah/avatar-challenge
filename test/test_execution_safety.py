@@ -5,7 +5,7 @@ cases that are hard to reproduce on hardware but dangerous in the field: an
 action goal that is accepted and then never completes, and a failure part-way
 through a multi-shape run.
 
-Run:  python3 -m pytest avatar_challenge/test/test_execution_safety.py -q
+Run:  python3 -m pytest test/test_execution_safety.py -q
 """
 
 import types

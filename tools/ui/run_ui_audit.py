@@ -12,7 +12,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-PAGE = os.path.join(ROOT, "avatar_challenge", "web", "shape_designer.html")
+PAGE = os.path.join(ROOT, "web", "shape_designer.html")
 AUDIT = os.path.join(HERE, "ui_audit.js")
 OUT = os.path.join(HERE, "_ui_run.js")
 
