@@ -172,17 +172,11 @@ Both tessellate into `arc_segments` (default 16) straight sub-segments.
 
 Not needed for the challenge workflow. Same build, different launch.
 
-### Browser inside the RDP desktop — no extra port
+> **The supplied image has no web browser installed.** `sensible-browser`
+> reports *"Couldn't find a suitable web browser!"*, so the designer is normally
+> viewed from **your host browser** through one published port, as below.
 
-```bash
-ros2 launch avatar_challenge designer.launch.py
-```
-
-Open **<http://localhost:8080>** in a browser inside the RDP desktop. The server
-binds loopback only, so nothing is exposed outside the container and the
-original `docker run` above is sufficient.
-
-### Browser on your host — one extra published port
+### Recommended: your host browser, one extra published port
 
 Create the container with one additional host-loopback mapping:
 
@@ -208,6 +202,18 @@ Dockerfile, and no second application container. Binding the host side as
 *inside* the container so Docker's published port can reach it — which is why
 the argument exists rather than being the default. `port:=` moves it if 8080 is
 taken.
+
+### Alternative: a browser inside the RDP desktop
+
+Needs no extra port, but needs a browser installed in the container first:
+
+```bash
+sudo apt-get update && sudo apt-get install -y firefox-esr
+ros2 launch avatar_challenge designer.launch.py     # loopback default
+```
+
+Then open <http://localhost:8080> in that browser. The server binds loopback
+only, so nothing leaves the container and the original `docker run` suffices.
 
 ### If your container already exists without port 8080
 
