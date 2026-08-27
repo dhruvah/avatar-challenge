@@ -1,5 +1,5 @@
 """Record tool height through a two-shape run and check the pen lifts between them."""
-import json, subprocess, sys, threading, time
+import json, subprocess, threading, time
 import numpy as np, rclpy
 from rclpy.node import Node
 from tf2_ros import Buffer, TransformListener

@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Entry point: the shape designer web UI, wired to the xArm.
-
-The tracer node is unchanged from the default branch; this only adds a web
-front end in front of it.
-"""
+"""Entry point for the shape designer and its xArm tracing backend."""
 
 import os
 import sys
@@ -13,7 +9,7 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.parameter import Parameter
 
 from avatar_challenge.designer_server import DesignerServer
-from avatar_challenge.shape_tracer_node import ShapeTracerNode
+from avatar_challenge.shape_tracer_node import PlannerRejected, ShapeTracerNode
 
 
 def runtime_config_path() -> str:
@@ -57,12 +53,12 @@ def main(argv=None):
             node.get_logger().info("Moving to the ready pose")
             try:
                 node.go_home()
-            except RuntimeError as exc:
+            except PlannerRejected as exc:
                 # The designer has nothing to trace yet, so a controller that is
                 # slow to come up must not take the server down with it.
                 node.get_logger().warn(
                     f"could not reach the ready pose at startup ({exc}); "
-                    f"serving anyway -- the arm will approach from where it is")
+                    "serving anyway -- the next trace will retry")
         server.spin(rclpy)
     except (KeyboardInterrupt, SystemExit):
         pass

@@ -11,9 +11,8 @@ blocks on an Event; the main thread owns the node, drains the queue, and posts
 the result back. Reservation is atomic, so two browsers pressing Send at the
 same instant cannot both be accepted.
 
-*Separation.* Everything the browser needs -- live tool path, progress, joint
-angles -- lives here rather than in ShapeTracerNode, which is byte-identical to
-the one on the lean default branch. This file subscribes for what it needs.
+*Separation.* Browser-only state -- live tool path, progress and joint angles --
+lives here rather than in ShapeTracerNode. This file subscribes for what it needs.
 """
 
 import json
@@ -264,7 +263,7 @@ class DesignerServer:
         # -- sometimes contorted -- branch. Homing once per request keeps
         # repeated submissions identical. Homing between *shapes* within a
         # request was measured as strictly worse and is deliberately not done.
-        if getattr(self.node, "home_on_start", True):
+        if self.node.home_on_start:
             self.node.get_logger().info("Returning to the ready pose")
             self.node.go_home()
 

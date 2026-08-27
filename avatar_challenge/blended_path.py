@@ -112,7 +112,12 @@ class BlendedPathExecutor:
         send_future = self._exec_cli.send_goal_async(goal)
         rclpy.spin_until_future_complete(self._node, send_future, timeout_sec=self._timeout)
         handle = send_future.result()
-        if handle is None or not handle.accepted:
+        if handle is None:
+            raise RuntimeError(
+                f"{description}: sending /execute_trajectory timed out; "
+                "the arm state is unknown"
+            )
+        if not handle.accepted:
             raise RuntimeError(f"{description}: /execute_trajectory rejected the goal")
 
         result_future = handle.get_result_async()

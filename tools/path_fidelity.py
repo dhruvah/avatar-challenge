@@ -4,7 +4,7 @@ Uses the live-progress path (already in the shape's 2D frame) and measures every
 recorded sample against the target outline, so the answer is in the same
 millimetres the user drew in.
 """
-import json, subprocess, sys, time, threading
+import json, subprocess, time, threading
 import numpy as np
 
 BASE="http://localhost:8080"

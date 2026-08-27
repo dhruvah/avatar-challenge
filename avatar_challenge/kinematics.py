@@ -156,11 +156,6 @@ class Chain:
         """Smallest singular value of J -- the direct distance to rank loss."""
         return float(np.linalg.svd(self.jacobian(q), compute_uv=False)[-1])
 
-    def condition(self, q) -> float:
-        """Ratio of largest to smallest singular value; blows up near singularities."""
-        s = np.linalg.svd(self.jacobian(q), compute_uv=False)
-        return float(s[0] / s[-1]) if s[-1] > 1e-12 else float("inf")
-
     def joint_limit_margin(self, q) -> float:
         """Smallest normalised distance to a joint limit, in [0, 0.5]."""
         worst = 1.0

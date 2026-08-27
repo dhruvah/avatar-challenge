@@ -6,7 +6,6 @@ to RViz for visual comparison against the arm's actual path.
 import sys
 import time
 
-import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
@@ -28,9 +27,6 @@ from avatar_challenge.shapes_io import load_shapes, ShapeDef
 # small tool motions need large joint speeds. Calibrated from a workspace sweep
 # -- see tools/workspace_quality.py and the README.
 SINGULARITY_WARN = 0.010
-
-# Most points the live-progress endpoint will return per poll.
-PROGRESS_PATH_CAP = 400
 
 
 class IKServiceError(RuntimeError):
@@ -167,11 +163,12 @@ class ShapeTracerNode(Node):
     def _call(self, client, request, description):
         future = client.call_async(request)
         rclpy.spin_until_future_complete(self, future, timeout_sec=self.service_timeout)
-        if future.result() is None:
+        result = future.result()
+        if result is None:
             raise ServiceTimeout(f"{description}: service call timed out")
-        if not future.result().success:
+        if not result.success:
             raise PlannerRejected(f"{description}: planner reported failure")
-        return future.result()
+        return result
 
     def _plan_and_exec_free(self, position, quaternion, description):
         req = PlanPose.Request()
@@ -198,7 +195,7 @@ class ShapeTracerNode(Node):
             self._plan_and_exec_straight(waypoint.position, waypoint.quaternion,
                                          f"{shape_name}:approach(straight)")
             return
-        except RuntimeError as exc:
+        except PlannerRejected as exc:
             self.get_logger().warn(
                 f"[{shape_name}] straight-line approach unavailable ({exc}); "
                 f"falling back to the sampling-based planner"

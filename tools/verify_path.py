@@ -1,7 +1,5 @@
 """Record link_eef poses from TF while the tracer runs, then report how closely
 the actual path passed through each target vertex."""
-import json
-import math
 import sys
 
 import numpy as np
